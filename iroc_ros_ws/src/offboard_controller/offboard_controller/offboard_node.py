@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-from offboard_controller.msg.srv import Takeoff
+from ros_interfaces.srv import Takeoff
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
 from geometry_msgs.msg import PoseStamped, Point, Quaternion
-from std_srv.srv import Trigger
+from std_srvs.srv import Trigger
 import time
 from mavros_msgs.srv import CommandBool, SetMode
 from mavros_msgs.msg import State

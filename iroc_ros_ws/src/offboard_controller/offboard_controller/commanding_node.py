@@ -3,7 +3,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Point
 from std_srvs.srv import Trigger
-from offboard_interfaces.srv import Takeoff
+from ros_interfaces.srv import Takeoff
 import sys
 
 class CommandingNode(Node):
