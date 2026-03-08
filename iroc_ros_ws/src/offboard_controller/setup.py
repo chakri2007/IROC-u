@@ -22,6 +22,7 @@ setup(
         'console_scripts': [
             'offboard_node = offboard_controller.offboard_node:main',
             'commanding_node = offboard_controller.commanding_node:main',
+            'test_1 = offboard_controller.test_1.py',
         ],
     },
 )

@@ -13,7 +13,7 @@ import threading
 
 class OffboardController(Node):
     def __init__(self):
-        super().__intit__('offboard_node')
+        super().__init__('offboard_node')
         qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.BEST_EFFORT, history=QoSProfile.HistoryPolicy.KEEP_LAST)
 
        # Subscribers
