@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 
 """
-Takeoff test for Copter using MAVROS (ROS 2)
+Takeoff test for Copter using MAVROS (ROS2)
+
+Mission:
+1. Record initial altitude
+2. Climb +1 meter
+3. Start landing
+4. Monitor descent speed
+5. Disarm when altitude ≈ initial altitude
 """
 
 import rclpy
@@ -14,24 +21,17 @@ import time
 from geometry_msgs.msg import PoseStamped
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, SetMode, CommandTOL
-from std_msgs.msg import Header
 
 
-# ────────────────────────────────────────────────
-# Config
-# ────────────────────────────────────────────────
-
-TAKEOFF_ALT = 10.5          # meters
-GUIDED_MODE = "GUIDED_NOGPS"
-LOCAL_FRAME_TIMEOUT = 30.0
-MODE_CHANGE_TIMEOUT = 15.0
-ARM_TIMEOUT = 20.0
-TAKEOFF_TIMEOUT = 40.0
+GUIDED_MODE = "GUIDED"
+CLIMB_HEIGHT = 1.0
 
 
 class CopterTakeoffMAVROS(Node):
+
     def __init__(self):
-        super().__init__("copter_takeoff_mavros")
+
+        super().__init__("copter_takeoff_test")
 
         qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -39,186 +39,228 @@ class CopterTakeoffMAVROS(Node):
             depth=10
         )
 
-        # State subscriber
         self.state = State()
-        self.state_sub = self.create_subscription(
+        self.local_pos = PoseStamped()
+
+        self.initial_alt = None
+
+        self.create_subscription(
             State,
             '/mavros/state',
             self.state_cb,
             qos
         )
 
-        # Local position subscriber (we'll use it to check altitude)
-        self.local_pos = PoseStamped()
-        self.local_pos_sub = self.create_subscription(
+        self.create_subscription(
             PoseStamped,
             '/mavros/local_position/pose',
             self.local_pos_cb,
             qos
         )
 
-        # Services
         self.arm_srv = self.create_client(CommandBool, '/mavros/cmd/arming')
         self.mode_srv = self.create_client(SetMode, '/mavros/set_mode')
         self.takeoff_srv = self.create_client(CommandTOL, '/mavros/cmd/takeoff')
 
-        # Wait for services
-        for srv, name in [
-            (self.arm_srv, "arming"),
-            (self.mode_srv, "set mode"),
-            (self.takeoff_srv, "takeoff")
-        ]:
+        for srv in [self.arm_srv, self.mode_srv, self.takeoff_srv]:
             while not srv.wait_for_service(timeout_sec=1.0):
-                self.get_logger().info(f'{name} service not available, waiting...')
+                self.get_logger().info("Waiting for MAVROS services...")
 
-        self.get_logger().info("MAVROS takeoff node initialized")
-
-    def state_cb(self, msg: State):
+    def state_cb(self, msg):
         self.state = msg
 
-    def local_pos_cb(self, msg: PoseStamped):
+    def local_pos_cb(self, msg):
         self.local_pos = msg
 
-    def wait_for_local_position(self, timeout_sec: float = 15.0) -> bool:
-        start = self.get_clock().now()
-        while self.local_pos.header.stamp.sec == 0:
-            if (self.get_clock().now() - start) > Duration(seconds=timeout_sec):
-                self.get_logger().error("No local position received")
-                return False
-            rclpy.spin_once(self, timeout_sec=0.2)
-        return True
+    # ----------------------------------------------------
 
-    def set_mode(self, mode: str, timeout_sec: float = MODE_CHANGE_TIMEOUT) -> bool:
+    def wait_for_local_position(self):
+
+        self.get_logger().info("Waiting for local position...")
+
+        while self.local_pos.header.stamp.sec == 0:
+            rclpy.spin_once(self, timeout_sec=0.2)
+
+        self.initial_alt = self.local_pos.pose.position.z
+
+        self.get_logger().info(
+            f"Initial altitude recorded: {self.initial_alt:.3f} m")
+
+    # ----------------------------------------------------
+
+    def set_mode(self, mode):
+
         req = SetMode.Request()
         req.custom_mode = mode
 
-        start = self.get_clock().now()
-        while (self.get_clock().now() - start) < Duration(seconds=timeout_sec):
-            future = self.mode_srv.call_async(req)
-            rclpy.spin_until_future_complete(self, future, timeout_sec=1.0)
+        future = self.mode_srv.call_async(req)
+        rclpy.spin_until_future_complete(self, future)
 
-            if future.result() is not None and future.result().mode_sent:
-                self.get_logger().info(f"Mode change to {mode} requested — waiting confirmation...")
-                # Wait a bit for state to update
-                for _ in range(8):
-                    if self.state.mode == mode:
-                        self.get_logger().info(f"→ now in {mode} mode")
-                        return True
-                    time.sleep(0.4)
-                    rclpy.spin_once(self)
+        if future.result() and future.result().mode_sent:
+            self.get_logger().info(f"Mode set request: {mode}")
+            return True
 
-            time.sleep(0.8)
-
-        self.get_logger().error(f"Failed to set mode to {mode}")
         return False
 
-    def arm(self, timeout_sec: float = ARM_TIMEOUT) -> bool:
+    # ----------------------------------------------------
+
+    def arm(self):
+
         req = CommandBool.Request()
         req.value = True
 
-        start = self.get_clock().now()
-        while (self.get_clock().now() - start) < Duration(seconds=timeout_sec):
-            future = self.arm_srv.call_async(req)
-            rclpy.spin_until_future_complete(self, future, timeout_sec=1.0)
+        future = self.arm_srv.call_async(req)
+        rclpy.spin_until_future_complete(self, future)
 
-            if future.result() is not None and future.result().success:
-                self.get_logger().info("Arm command sent — waiting for armed state...")
-                for _ in range(12):
-                    if self.state.armed:
-                        self.get_logger().info("Vehicle ARMED")
-                        return True
-                    time.sleep(0.4)
-                    rclpy.spin_once(self)
-            else:
-                self.get_logger().warn("Arm call failed — retrying...")
+        if future.result() and future.result().success:
+            self.get_logger().info("Vehicle armed")
+            return True
 
-            time.sleep(1.0)
-
-        self.get_logger().error("Failed to arm vehicle")
         return False
 
-    def takeoff(self, alt: float, timeout_sec: float = TAKEOFF_TIMEOUT) -> bool:
+    # ----------------------------------------------------
+
+    def disarm(self):
+
+        req = CommandBool.Request()
+        req.value = False
+
+        future = self.arm_srv.call_async(req)
+        rclpy.spin_until_future_complete(self, future)
+
+        if future.result() and future.result().success:
+            self.get_logger().info("Vehicle disarmed")
+            return True
+
+        return False
+
+    # ----------------------------------------------------
+
+    def takeoff(self, altitude):
+
         req = CommandTOL.Request()
-        req.altitude = float(alt)
-        req.latitude = 0.0   # relative takeoff (0 = current)
+
+        req.altitude = altitude
+        req.latitude = 0.0
         req.longitude = 0.0
         req.min_pitch = 0.0
-        req.yaw = 0.0        # keep current yaw
+        req.yaw = 0.0
 
         future = self.takeoff_srv.call_async(req)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=3.0)
 
-        if future.result() is not None and future.result().success:
-            self.get_logger().info(f"Takeoff command sent — target {alt:.1f} m")
+        rclpy.spin_until_future_complete(self, future)
+
+        if future.result() and future.result().success:
+            self.get_logger().info(f"Takeoff command sent: {altitude:.2f}")
             return True
-        else:
-            self.get_logger().error("Takeoff command failed")
-            return False
 
-    def wait_until_reach_altitude(self, target_alt: float, timeout_sec: float = 60.0):
-        start = self.get_clock().now()
-        last_log = start
+        return False
 
-        while (self.get_clock().now() - start) < Duration(seconds=timeout_sec):
-            rclpy.spin_once(self, timeout_sec=0.3)
+    # ----------------------------------------------------
 
-            if self.local_pos.header.stamp.sec == 0:
-                continue
+    def wait_until_reach_altitude(self, target):
 
-            current_alt = self.local_pos.pose.position.z
+        while rclpy.ok():
 
-            now = self.get_clock().now()
-            if (now - last_log) > Duration(seconds=2.5):
-                self.get_logger().info(f"Altitude: {current_alt:.2f} m / {target_alt:.1f} m")
-                last_log = now
+            rclpy.spin_once(self, timeout_sec=0.2)
 
-            if current_alt >= target_alt - 0.6:  # small margin
-                self.get_logger().info(f"Reached target altitude ≈ {current_alt:.2f} m")
+            alt = self.local_pos.pose.position.z
+
+            self.get_logger().info(f"Altitude: {alt:.2f}")
+
+            if alt >= target - 0.4:
+                self.get_logger().info("Target altitude reached")
                 return True
+
+            time.sleep(0.5)
+
+    # ----------------------------------------------------
+
+    def monitor_descent(self):
+
+        self.get_logger().info("Monitoring descent...")
+
+        prev_alt = self.local_pos.pose.position.z
+        prev_time = time.time()
+
+        while rclpy.ok():
+
+            rclpy.spin_once(self, timeout_sec=0.2)
+
+            alt = self.local_pos.pose.position.z
+            now = time.time()
+
+            dt = now - prev_time
+            dz = prev_alt - alt
+
+            if dt > 0:
+
+                velocity = dz / dt
+
+                self.get_logger().info(
+                    f"Altitude: {alt:.2f}  Descent rate: {velocity:.2f} m/s")
+
+                if velocity > 2.0:
+                    self.get_logger().warn("Sudden drop detected!")
+
+                else:
+                    self.get_logger().info("Slow descent")
+
+            if alt <= self.initial_alt + 0.1:
+                self.get_logger().info(
+                    "Altitude close to initial height → Disarming")
+                self.disarm()
+                return
+
+            prev_alt = alt
+            prev_time = now
 
             time.sleep(0.4)
 
-        self.get_logger().error("Did NOT reach target altitude in time")
-        return False
 
+# ----------------------------------------------------
 
 def main(args=None):
+
     rclpy.init(args=args)
+
     node = CopterTakeoffMAVROS()
 
     try:
-        # 1. Wait for local position
-        if not node.wait_for_local_position():
-            raise RuntimeError("No local position available")
 
-        # 2. Switch to GUIDED
-        if not node.set_mode(GUIDED_MODE):
-            raise RuntimeError(f"Could not switch to {GUIDED_MODE} mode")
+        node.wait_for_local_position()
 
-        # 3. Arm
-        if not node.arm():
-            raise RuntimeError("Could not arm vehicle")
+        target_alt = node.initial_alt + CLIMB_HEIGHT
 
-        # 4. Takeoff
-        if not node.takeoff(TAKEOFF_ALT):
-            raise RuntimeError("Takeoff command failed")
+        node.set_mode(GUIDED_MODE)
 
-        # 5. Monitor climb
-        if not node.wait_until_reach_altitude(TAKEOFF_ALT):
-            raise RuntimeError("Failed to reach takeoff altitude")
+        time.sleep(1)
 
-        node.get_logger().info("Takeoff test completed successfully!")
+        node.arm()
 
-    except Exception as e:
-        node.get_logger().error(f"Error: {str(e)}")
+        time.sleep(2)
+
+        node.takeoff(target_alt)
+
+        node.wait_until_reach_altitude(target_alt)
+
+        time.sleep(2)
+
+        node.get_logger().info("Switching to LAND mode")
+
+        node.set_mode("LAND")
+
+        node.monitor_descent()
 
     except KeyboardInterrupt:
-        node.get_logger().info("Interrupted by user")
+
+        node.get_logger().info("Interrupted")
 
     finally:
+
         node.destroy_node()
         rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
