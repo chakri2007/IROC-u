@@ -6,14 +6,14 @@ Takeoff test for Copter using MAVROS (ROS2)
 Mission:
 1. Record initial altitude
 2. Climb +1 meter
-3. Start landing
-4. Monitor descent speed
-5. Disarm when altitude ≈ initial altitude
+3. Hover for 60 seconds
+4. Start landing
+5. Monitor descent speed
+6. Disarm when altitude ≈ initial altitude
 """
 
 import rclpy
 from rclpy.node import Node
-from rclpy.duration import Duration
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 import time
@@ -25,6 +25,7 @@ from mavros_msgs.srv import CommandBool, SetMode, CommandTOL
 
 GUIDED_MODE = "GUIDED"
 CLIMB_HEIGHT = 1.0
+HOVER_TIME = 60.0
 
 
 class CopterTakeoffMAVROS(Node):
@@ -41,9 +42,9 @@ class CopterTakeoffMAVROS(Node):
 
         self.state = State()
         self.local_pos = PoseStamped()
-
         self.initial_alt = None
 
+        # Subscribers
         self.create_subscription(
             State,
             '/mavros/state',
@@ -58,6 +59,7 @@ class CopterTakeoffMAVROS(Node):
             qos
         )
 
+        # Service clients
         self.arm_srv = self.create_client(CommandBool, '/mavros/cmd/arming')
         self.mode_srv = self.create_client(SetMode, '/mavros/set_mode')
         self.takeoff_srv = self.create_client(CommandTOL, '/mavros/cmd/takeoff')
@@ -66,8 +68,12 @@ class CopterTakeoffMAVROS(Node):
             while not srv.wait_for_service(timeout_sec=1.0):
                 self.get_logger().info("Waiting for MAVROS services...")
 
+    # ----------------------------------------------------
+
     def state_cb(self, msg):
         self.state = msg
+
+    # ----------------------------------------------------
 
     def local_pos_cb(self, msg):
         self.local_pos = msg
@@ -100,6 +106,7 @@ class CopterTakeoffMAVROS(Node):
             self.get_logger().info(f"Mode set request: {mode}")
             return True
 
+        self.get_logger().error("Failed to set mode")
         return False
 
     # ----------------------------------------------------
@@ -116,6 +123,7 @@ class CopterTakeoffMAVROS(Node):
             self.get_logger().info("Vehicle armed")
             return True
 
+        self.get_logger().error("Arming failed")
         return False
 
     # ----------------------------------------------------
@@ -132,6 +140,7 @@ class CopterTakeoffMAVROS(Node):
             self.get_logger().info("Vehicle disarmed")
             return True
 
+        self.get_logger().error("Disarm failed")
         return False
 
     # ----------------------------------------------------
@@ -154,11 +163,14 @@ class CopterTakeoffMAVROS(Node):
             self.get_logger().info(f"Takeoff command sent: {altitude:.2f}")
             return True
 
+        self.get_logger().error("Takeoff command failed")
         return False
 
     # ----------------------------------------------------
 
     def wait_until_reach_altitude(self, target):
+
+        self.get_logger().info("Climbing to target altitude...")
 
         while rclpy.ok():
 
@@ -166,11 +178,36 @@ class CopterTakeoffMAVROS(Node):
 
             alt = self.local_pos.pose.position.z
 
-            self.get_logger().info(f"Altitude: {alt:.2f}")
+            self.get_logger().info(f"Altitude: {alt:.2f} m")
 
             if alt >= target - 0.4:
                 self.get_logger().info("Target altitude reached")
                 return True
+
+            time.sleep(0.5)
+
+    # ----------------------------------------------------
+
+    def hover_for_duration(self, duration_sec):
+
+        self.get_logger().info(f"Hovering for {duration_sec} seconds...")
+
+        start_time = time.time()
+
+        while rclpy.ok():
+
+            rclpy.spin_once(self, timeout_sec=0.2)
+
+            elapsed = time.time() - start_time
+            alt = self.local_pos.pose.position.z
+
+            self.get_logger().info(
+                f"Hovering | Altitude: {alt:.2f} m | Time: {elapsed:.1f}/{duration_sec}s"
+            )
+
+            if elapsed >= duration_sec:
+                self.get_logger().info("Hover time completed")
+                return
 
             time.sleep(0.5)
 
@@ -198,13 +235,12 @@ class CopterTakeoffMAVROS(Node):
                 velocity = dz / dt
 
                 self.get_logger().info(
-                    f"Altitude: {alt:.2f}  Descent rate: {velocity:.2f} m/s")
+                    f"Altitude: {alt:.2f} m  Descent rate: {velocity:.2f} m/s")
 
                 if velocity > 2.0:
                     self.get_logger().warn("Sudden drop detected!")
-
                 else:
-                    self.get_logger().info("Slow descent")
+                    self.get_logger().info("Controlled descent")
 
             if alt <= self.initial_alt + 0.1:
                 self.get_logger().info(
@@ -244,7 +280,8 @@ def main(args=None):
 
         node.wait_until_reach_altitude(target_alt)
 
-        time.sleep(2)
+        # Hover for 60 seconds
+        node.hover_for_duration(HOVER_TIME)
 
         node.get_logger().info("Switching to LAND mode")
 
