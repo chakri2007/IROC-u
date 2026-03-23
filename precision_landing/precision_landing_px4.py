@@ -206,7 +206,7 @@ class OffboardControl(Node):
                 dx = (self.err_x - self.prev_err_x) / dt
                 dy = (self.err_y - self.prev_err_y) / dt
 
-                # ✅ Correct mapping (downward camera)
+                # Correct mapping (downward camera)
                 vx =  kp * self.err_y + kd * dy
                 vy = -kp * self.err_x - kd * dx
 
@@ -230,6 +230,8 @@ class OffboardControl(Node):
 
         # Publish velocity
         self.publish_velocity(vx, vy, vz)
+        # Debug log in which direction the velocities are gives in drones body frame (x forward, y right, z down)
+        self.get_logger().info(f" vx={vx:.2f} m/s, vy={vy:.2f} m/s, vz={vz:.2f} m/s")
 
         # Update memory
         self.prev_err_x = self.err_x
