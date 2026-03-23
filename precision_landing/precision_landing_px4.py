@@ -4,7 +4,7 @@ import rclpy
 from rclpy.node import Node
 import numpy as np
 import time
-from rclpy.qos import qos_sensor_data
+from rclpy.qos import qos_pofile_sensor_data
 from geometry_msgs.msg import TwistStamped, PoseStamped
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, SetMode
@@ -50,7 +50,7 @@ class OffboardControl(Node):
             PoseStamped,
             '/mavros/local_position/pose',
             self.pos_cb,
-            qos_sensor_data
+            qos_profile_sensor_data
         )
 
         self.create_subscription(

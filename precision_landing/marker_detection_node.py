@@ -63,18 +63,37 @@ class ArucoErrorNode(Node):
             data.data = [1.0, error_x, error_y]
 
             self.get_logger().debug(f'Detected: [1, {error_x:.1f}, {error_y:.1f}]')
+
+            # ===== Draw bounding box and ID =====
+            for corner, marker_id in zip(corners, ids):
+                pts = corner[0].astype(int)
+                cv2.polylines(cv_image, [pts], isClosed=True, color=(0, 255, 0), thickness=2)
+                cX = int(np.mean(pts[:, 0]))
+                cY = int(np.mean(pts[:, 1]))
+                cv2.putText(cv_image, f"ID:{int(marker_id)}", (cX-10, cY-10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
         else:
             data.data = [0.0, 0.0, 0.0]
 
         self.publisher.publish(data)
 
+        # ===== Display the camera feed =====
+        cv2.imshow("Aruco Detection", cv_image)
+        cv2.waitKey(1)
+
 
 def main(args=None):
     rclpy.init(args=args)
     node = ArucoErrorNode()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+        cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':
