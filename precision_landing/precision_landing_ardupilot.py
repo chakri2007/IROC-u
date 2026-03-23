@@ -13,7 +13,7 @@ from std_msgs.msg import Float32MultiArray
 
 
 GUIDED_MODE = "GUIDED"
-CLIMB_HEIGHT = 1.0
+CLIMB_HEIGHT = 5.0
 
 
 class CopterTakeoffMAVROS(Node):
@@ -155,6 +155,7 @@ class CopterTakeoffMAVROS(Node):
         vel.twist.linear.x = -vy
         vel.twist.linear.y = -vx
         vel.twist.linear.z = vz
+        self.get_logger().debug(f"Publishing velocity: vx={-vy:.2f}, vy={-vx:.2f}, vz={vz:.2f}")
 
         self.vel_pub.publish(vel)
 
