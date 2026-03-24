@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 
 
+
 class ArucoErrorNode(Node):
     def __init__(self):
         super().__init__('aruco_error_node')

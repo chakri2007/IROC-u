@@ -4,7 +4,7 @@ import rclpy
 from rclpy.node import Node
 import numpy as np
 import time
-from rclpy.qos import qos_pofile_sensor_data
+from rclpy.qos import qos_profile_sensor_data
 from geometry_msgs.msg import TwistStamped, PoseStamped
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, SetMode
@@ -207,7 +207,7 @@ class OffboardControl(Node):
                 dy = (self.err_y - self.prev_err_y) / dt
 
                 # Correct mapping (downward camera)
-                vx =  kp * self.err_y + kd * dy
+                vx =  -kp * self.err_y - kd * dy
                 vy = -kp * self.err_x - kd * dx
 
                 vx = float(np.clip(vx, -max_xy, max_xy))
