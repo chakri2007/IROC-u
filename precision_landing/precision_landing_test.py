@@ -3,7 +3,6 @@
 import rclpy
 from rclpy.node import Node
 import numpy as np
-import time
 from rclpy.qos import qos_profile_sensor_data
 from geometry_msgs.msg import TwistStamped, PoseStamped
 from mavros_msgs.msg import State
@@ -28,20 +27,20 @@ class OffboardControl(Node):
         # PD memory
         self.prev_err_x = 0.0
         self.prev_err_y = 0.0
-        self.prev_time = time.time()
+        self.prev_time = self.get_clock().now()
 
         # ================== PARAMETERS ==================
-        self.declare_parameter("kp", 0.002)
+        self.declare_parameter("kp", 0.005)
         self.declare_parameter("kd", 0.0)
 
-        self.declare_parameter("max_vel_xy", 0.3)
+        self.declare_parameter("max_vel_xy", 0.4)
         self.declare_parameter("max_vel_z", 0.3)
 
         self.declare_parameter("error_threshold", 20.0)
         self.declare_parameter("descent_speed", 0.1)
 
         self.declare_parameter("takeoff_alt", 1.0)
-        self.declare_parameter("hover_time", 3.0)
+        self.declare_parameter("hover_time", 5.0)
 
         # ================== SUBSCRIBERS ==================
         self.create_subscription(State, '/mavros/state', self.state_cb, 10)
@@ -90,17 +89,38 @@ class OffboardControl(Node):
         self.phase = "INIT"
         self.start_time = None
 
+        self.recorded_init_z = False
+        self.initial_z = 0.0
+
+        self.descend_started = False
+
+        # Marker timeout
+        self.no_marker_timeout = 5.0
+        self.no_marker_time = self.get_clock().now()
+        self.started_no_marker_timer = False
+
     # ----------------------------------------------------
     def state_cb(self, msg):
         self.current_state = msg
 
     def pos_cb(self, msg):
         self.current_alt = msg.pose.position.z
+        if not self.recorded_init_z:
+            self.initial_z = self.current_alt
+            self.recorded_init_z = True
 
     def aruco_cb(self, msg):
         self.detected = msg.data[0]
         self.err_x = msg.data[1]
         self.err_y = msg.data[2]
+
+        # Marker timeout logic
+        if self.detected == 0.0 and not self.started_no_marker_timer:
+            self.no_marker_time = self.get_clock().now()
+            self.started_no_marker_timer = True
+
+        elif self.detected == 1.0:
+            self.started_no_marker_timer = False
 
     def gains_cb(self, msg):
         self.set_parameters([
@@ -156,48 +176,44 @@ class OffboardControl(Node):
         # ================== CONTROL ==================
         vx, vy, vz = 0.0, 0.0, 0.0
 
-        now = time.time()
-        dt = now - self.prev_time
-        if dt == 0:
-            return
+        now = self.get_clock().now()
+        dt = (now - self.prev_time).nanoseconds / 1e9
+        dt = max(dt, 0.01)
 
         # ================== STATE MACHINE ==================
 
-        # INIT → TAKEOFF
         if self.phase == "INIT":
             if self.current_state.mode == "OFFBOARD" and self.current_state.armed:
                 self.get_logger().info("Switching to TAKEOFF")
                 self.phase = "TAKEOFF"
 
-        # TAKEOFF
         elif self.phase == "TAKEOFF":
 
-            vz = 0.5
-
-            takeoff_alt = self.get_parameter("takeoff_alt").value
+            vz = 0.4
+            takeoff_alt = self.get_parameter("takeoff_alt").value + self.initial_z
 
             if self.current_alt >= takeoff_alt - 0.2:
                 self.get_logger().info("Takeoff reached → Hover")
                 self.phase = "HOVER"
-                self.start_time = time.time()
+                self.start_time = self.get_clock().now()
 
-        # HOVER
         elif self.phase == "HOVER":
 
             vz = 0.0
-
             hover_time = self.get_parameter("hover_time").value
 
-            if time.time() - self.start_time > hover_time:
+            hover_elapsed = (self.get_clock().now() - self.start_time).nanoseconds / 1e9
+
+            if hover_elapsed > hover_time:
                 self.get_logger().info("Switching to VISION mode")
                 self.phase = "VISION"
 
-        # VISION LANDING
         elif self.phase == "VISION":
 
             kp = self.get_parameter("kp").value
             kd = self.get_parameter("kd").value
             max_xy = self.get_parameter("max_vel_xy").value
+            max_z = self.get_parameter("max_vel_z").value
             threshold = self.get_parameter("error_threshold").value
             descent = self.get_parameter("descent_speed").value
 
@@ -206,8 +222,7 @@ class OffboardControl(Node):
                 dx = (self.err_x - self.prev_err_x) / dt
                 dy = (self.err_y - self.prev_err_y) / dt
 
-                # Correct mapping (downward camera)
-                vx =  -kp * self.err_y - kd * dy
+                vx = -kp * self.err_y - kd * dy
                 vy = -kp * self.err_x - kd * dx
 
                 vx = float(np.clip(vx, -max_xy, max_xy))
@@ -217,21 +232,29 @@ class OffboardControl(Node):
 
                 if error_mag < threshold:
                     vz = -descent
+                    self.descend_started = True
                 else:
                     vz = 0.0
 
             else:
-                vx = vy = vz = 0.0
+                elapsed = (self.get_clock().now() - self.no_marker_time).nanoseconds / 1e9
 
-            # Auto land when close to ground
-            if self.current_alt < 0.3:
+                if self.descend_started and elapsed > self.no_marker_timeout:
+                    vz = -descent
+                else:
+                    vx = vy = vz = 0.0
+
+            vz = float(np.clip(vz, -max_z, max_z))
+
+            # Auto land
+            if self.current_alt < (self.initial_z + 0.15):
                 self.get_logger().info("Landing complete → AUTO.LAND")
                 self.set_mode("AUTO.LAND")
 
         # Publish velocity
         self.publish_velocity(vx, vy, vz)
-        # Debug log in which direction the velocities are gives in drones body frame (x forward, y right, z down)
-        self.get_logger().info(f" vx={vx:.2f} m/s, vy={vy:.2f} m/s, vz={vz:.2f} m/s")
+
+        self.get_logger().info(f"vx={vx:.2f}, vy={vy:.2f}, vz={vz:.2f}")
 
         # Update memory
         self.prev_err_x = self.err_x
