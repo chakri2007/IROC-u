@@ -15,6 +15,7 @@ from std_msgs.msg import Float32MultiArray
 
 GUIDED_MODE = "GUIDED"
 CLIMB_HEIGHT = 1.2
+CLIMB_RATE = 0.5      # m/s upward (positive Z = up, consistent with your descent sign)
 HOVER_TIME = 5.0
 
 
@@ -56,14 +57,14 @@ class PrecisionLandingNode(Node):
         self.create_subscription(PoseStamped, '/mavros/local_position/pose', self.local_pos_cb, qos)
         self.create_subscription(Float32MultiArray, '/aruco_error', self.aruco_cb, 10)
 
-        # Publisher
+        # Publisher - velocity setpoint (same topic you already use)
         self.vel_pub = self.create_publisher(
             TwistStamped,
             '/mavros/setpoint_velocity/cmd_vel',
             10
         )
 
-        # Services
+        # Services (kept for arm/mode; takeoff service is no longer used)
         self.arm_srv = self.create_client(CommandBool, '/mavros/cmd/arming')
         self.mode_srv = self.create_client(SetMode, '/mavros/set_mode')
         self.takeoff_srv = self.create_client(CommandTOL, '/mavros/cmd/takeoff')
@@ -71,6 +72,17 @@ class PrecisionLandingNode(Node):
         for srv in [self.arm_srv, self.mode_srv, self.takeoff_srv]:
             while not srv.wait_for_service(timeout_sec=1.0):
                 self.get_logger().info("Waiting for MAVROS services...")
+
+    # -------------------- New helper: velocity setpoint (exactly like your ROS1 example) --------------------
+    def publish_velocity(self, vx: float = 0.0, vy: float = 0.0, vz: float = 0.0):
+        """Publish velocity in body frame with proper header (this was the missing piece)."""
+        vel = TwistStamped()
+        vel.header.stamp = self.get_clock().now().to_msg()
+        vel.header.frame_id = "base_link"          # Body frame (Forward-Right-?, exactly as in your snippet)
+        vel.twist.linear.x = vx
+        vel.twist.linear.y = vy
+        vel.twist.linear.z = vz
+        self.vel_pub.publish(vel)
 
     # -------------------- Callbacks --------------------
 
@@ -108,12 +120,7 @@ class PrecisionLandingNode(Node):
         rclpy.spin_until_future_complete(self, future)
         return future.result().success
 
-    def takeoff(self, altitude):
-        req = CommandTOL.Request()
-        req.altitude = altitude
-        future = self.takeoff_srv.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        return future.result().success
+    # (takeoff service is kept but no longer called)
 
     # -------------------- Helpers --------------------
 
@@ -126,12 +133,6 @@ class PrecisionLandingNode(Node):
             rclpy.spin_once(self, timeout_sec=0.2)
 
         self.initial_alt = self.local_pos.pose.position.z
-
-    def wait_until_altitude(self, target):
-        while rclpy.ok():
-            rclpy.spin_once(self, timeout_sec=0.2)
-            if self.local_pos.pose.position.z >= target - 0.2:
-                return
 
     def hover(self, duration):
         start = time.time()
@@ -172,26 +173,21 @@ class PrecisionLandingNode(Node):
                     self.stable_hover_timer_started = False
 
                 if error_mag < self.threshold:
-                    if not self.stable_hover_timer_started :
+                    if not self.stable_hover_timer_started:
                         self.stable_hover_timer_started = True
                         self.stable_hover_time = time.time()
                     
                     if time.time() - self.stable_hover_time > 2.0:
-                        vx=vy=0.0
+                        vx = vy = 0.0
                         vz = -self.descent_speed
-                    
 
-            vel = TwistStamped()
-            vel.twist.linear.x = vx
-            vel.twist.linear.y = vy
-            vel.twist.linear.z = vz
-
-            self.vel_pub.publish(vel)
+            # Publish using the new helper (header + base_link frame)
+            self.publish_velocity(vx, vy, vz)
 
             alt = self.local_pos.pose.position.z
 
             self.get_logger().info(
-                f"Alt: {alt:.2f} | err: {self.err_x:.1f},{self.err_y:.1f}"
+                f"Alt: {alt:.2f} | err: {self.err_x:.1f},{self.err_y:.1f} | vel: {vx:.2f},{vy:.2f},{vz:.2f}"
             )
 
             if alt <= self.initial_alt + 0.2:
@@ -227,20 +223,31 @@ def main(args=None):
             node.arm()
             rclpy.spin_once(node, timeout_sec=0.5)
 
-        # TAKEOFF
-        node.takeoff(target_alt)
-        node.wait_until_altitude(target_alt)
+        # === TAKEOFF REPLACED BY VELOCITY CLIMB (using your exact ROS1-style setpoint) ===
+        node.get_logger().info(f"Climbing to {target_alt} m using velocity setpoints...")
+        while rclpy.ok():
+            rclpy.spin_once(node, timeout_sec=0.05)
+            if node.local_pos.pose.position.z >= target_alt - 0.2:
+                break
+            node.publish_velocity(vz=CLIMB_RATE)   # positive Z = climb
+
+        # Stop climbing (send zero velocity)
+        node.publish_velocity()
+        node.get_logger().info("Reached target altitude → hovering")
 
         # HOVER
         node.hover(HOVER_TIME)
 
-        # PRECISION LANDING
+        # PRECISION LANDING (now also uses the fixed velocity publisher)
         node.precision_land()
 
     except KeyboardInterrupt:
-        pass
-
+        node.get_logger().info("Keyboard interrupt → shutting down")
+    except Exception as e:
+        node.get_logger().error(f"Exception: {e}")
     finally:
+        # Safety stop
+        node.publish_velocity()
         node.destroy_node()
         rclpy.shutdown()
 
