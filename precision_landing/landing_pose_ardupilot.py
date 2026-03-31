@@ -45,7 +45,7 @@ class PositionBasedLanding(Node):
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         self.declare_parameter("camera_frame", "camera_optical_frame")
         self.camera_frame = self.get_parameter("camera_frame").get_parameter_value().string_value
-        self.current_tag_id = -1
+        self.current_tag_id = 0
         self.tag_frame = ""
 
         # ================== PARAMETERS ==================
@@ -121,7 +121,7 @@ class PositionBasedLanding(Node):
             self.err_y = 0.0
             self.err_z = 0.0
             self.detected = 0.0
-            self.current_tag_id = -1
+            self.current_tag_id = 0
             self.tag_frame = ""
 
     def gains_cb(self, msg):
