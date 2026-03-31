@@ -9,7 +9,7 @@ from geometry_msgs.msg import TwistStamped, PoseStamped
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, SetMode
 from std_msgs.msg import Float32MultiArray
-from apriltag_msgs.msg import ApriltagDetectionArray
+from apriltag_msgs.msg import AprilTagDetectionArray
 import tf2_ros
 
 class PositionBasedLanding(Node):
@@ -56,7 +56,7 @@ class PositionBasedLanding(Node):
         self.declare_parameter("max_vel_xy", 0.3)
         self.declare_parameter("max_vel_z", 0.2)
 
-        self.declare_parameter("error_threshold", 20.0)
+        self.declare_parameter("error_threshold", 0.2)
         self.declare_parameter("descent_speed", 0.1)
 
         self.declare_parameter("takeoff_alt", 1.0)
@@ -82,7 +82,7 @@ class PositionBasedLanding(Node):
 
         #Get detected data from /detection topic (april_ros)
         self.create_subscription(
-            ApriltagDetectionArray,
+            AprilTagDetectionArray,
             '/detection',
             self.aruco_cb,
             qos_profile_sensor_data
