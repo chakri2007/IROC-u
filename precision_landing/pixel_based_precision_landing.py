@@ -140,7 +140,7 @@ class PrecisionLandingNode(Node):
                         vz = -self.descent_speed
             vel = TwistStamped()
             vel.header.stamp = self.get_clock().now().to_msg()
-            vel.header.frame_id = "base_link" # ✅ CRITICAL
+            vel.header.frame_id = "base_link"
             vel.twist.linear.x = vx
             vel.twist.linear.y = vy
             vel.twist.linear.z = vz
