@@ -4,299 +4,211 @@ import rclpy
 from rclpy.node import Node
 import numpy as np
 import time
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import qos_profile_sensor_data, QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from geometry_msgs.msg import TwistStamped, PoseStamped
 from mavros_msgs.msg import State
-from mavros_msgs.srv import CommandBool, SetMode
-from std_msgs.msg import Float32MultiArray
+from mavros_msgs.srv import CommandBool, SetMode, CommandTOL
 from apriltag_msgs.msg import AprilTagDetectionArray
 import tf2_ros
+from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
 
-class PositionBasedLanding(Node):
+class AutonomousPrecisionLanding(Node):
 
     def __init__(self):
-        super().__init__('vision_position_based_landing')
+        super().__init__('autonomous_precision_landing')
 
-        # ================== STATE ==================
-        self.current_state = State()
-        self.current_alt = 0.0
+        # ================== QOS & STATE ==================
+        qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            depth=10
+        )
 
+        self.state = State()
+        self.local_pos = PoseStamped()
+        self.initial_alt = 0.0
+        
+        # Tracking State
+        self.tag_frame = ""
         self.err_x = 0.0
         self.err_y = 0.0
         self.err_z = 0.0
-        self.detected = 0.0
+        self.detected = False
 
-        # PD memory
+        # PID memory
         self.prev_err_x = 0.0
         self.prev_err_y = 0.0
-        self.prev_err_z = 0.0
         self.prev_time = time.time()
 
-        # Integral terms
-        self.integral_x = 0.0
-        self.integral_y = 0.0
-        self.integral_z = 0.0
+        # ================== PARAMETERS ==================
+        self.declare_parameter("takeoff_alt", 2.0)
+        self.declare_parameter("kp", 0.5)   # Adjusted for base_link velocity scale
+        self.declare_parameter("kd", 0.0)
+        self.declare_parameter("max_vel_xy", 0.3)
+        self.declare_parameter("land_alt_threshold", 0.2) 
 
-        # Hover timer for low-altitude centering
-        self.hover_time_start = None
-
-        # TF for april_ros (pose comes from TF, not message)
+        # TF setup
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
-        self.declare_parameter("camera_frame", "camera_optical_frame")
-        self.camera_frame = self.get_parameter("camera_frame").get_parameter_value().string_value
-        self.current_tag_id = 0
-        self.tag_frame = ""
+        self.camera_frame = "camera_color_optical_frame"
 
-        # ================== PARAMETERS ==================
-        self.declare_parameter("kp", 0.002)
-        self.declare_parameter("kd", 0.0)
-        self.declare_parameter("ki", 0.0)
-
-        self.declare_parameter("max_vel_xy", 0.3)
-        self.declare_parameter("max_vel_z", 0.2)
-
-        self.declare_parameter("error_threshold", 0.2)
-        self.declare_parameter("descent_speed", 0.1)
-
-        self.declare_parameter("takeoff_alt", 1.0)
-        self.declare_parameter("hover_time", 3.0)
-        self.declare_parameter("z_error_threshold", 0.2)
-        self.declare_parameter("landing_timeout", 30.0)
-        self.declare_parameter("low_alt_hover_time", 3.0)
-
-        # Load initial gains
-        self.kp = self.get_parameter("kp").get_parameter_value().double_value
-        self.kd = self.get_parameter("kd").get_parameter_value().double_value
-        self.ki = self.get_parameter("ki").get_parameter_value().double_value
-
-        # ================== SUBSCRIBERS ==================
-        self.create_subscription(State, '/mavros/state', self.state_cb, 10)
-
-        self.create_subscription(
-             PoseStamped,
-             '/mavros/local_position/pose',
-             self.pos_cb,
-             qos_profile_sensor_data
-         )
-
-        #Get detected data from /detection topic (april_ros)
-        self.create_subscription(
-            AprilTagDetectionArray,
-            '/detection',
-            self.aruco_cb,
-            qos_profile_sensor_data
-        )
-        self.create_subscription(
-            Float32MultiArray,
-            '/controller_gains',
-            self.gains_cb,
-            10
-        )
-
-        # ================== PUBLISHERS ==================
+        # ================== COMMS ==================
+        self.create_subscription(State, '/mavros/state', self.state_cb, qos)
+        self.create_subscription(PoseStamped, '/mavros/local_position/pose', self.pos_cb, qos)
+        self.create_subscription(AprilTagDetectionArray, '/detections', self.aruco_cb, qos_profile_sensor_data)
+        
         self.vel_pub = self.create_publisher(TwistStamped, '/mavros/setpoint_velocity/cmd_vel', 10)
 
-        # ================== SERVICES ==================
-        self.arm_client = self.create_client(CommandBool, '/mavros/cmd/arming')
-        self.mode_client = self.create_client(SetMode, '/mavros/set_mode')
+        # Services
+        self.arm_srv = self.create_client(CommandBool, '/mavros/cmd/arming')
+        self.mode_srv = self.create_client(SetMode, '/mavros/set_mode')
+        self.takeoff_srv = self.create_client(CommandTOL, '/mavros/cmd/takeoff')
 
-        # ================== CONTROL TIMER ==================
-        self.create_timer(0.05, self.control_loop)  # 20 Hz
-
+    # -------------------- Callbacks --------------------
     def state_cb(self, msg):
-        self.current_state = msg
+        self.state = msg
+
     def pos_cb(self, msg):
-        self.current_alt = msg.pose.position.z
+        self.local_pos = msg
 
     def aruco_cb(self, msg):
         if len(msg.detections) > 0:
-            detection = msg.detections[0]
-            # april_ros only gives detection info + TF (no pose in msg)
-            self.current_tag_id = getattr(detection, 'id', 0)
-            self.tag_frame = f"tag_{self.current_tag_id}"
-            self.detected = 1.0
+            det = msg.detections[0]
+            tag_id = det.id[0] if hasattr(det.id, '__iter__') else det.id
+            self.tag_frame = f"tag25h9:{tag_id}"
         else:
-            self.err_x = 0.0
-            self.err_y = 0.0
-            self.err_z = 0.0
-            self.detected = 0.0
-            self.current_tag_id = 0
             self.tag_frame = ""
 
-    def gains_cb(self, msg):
-        self.get_logger().info(f"Received new gains: {msg.data}")
-        if len(msg.data) >= 3:
-            self.kp = msg.data[0]
-            self.kd = msg.data[1]
-            self.ki = msg.data[2]
-    
+    # -------------------- Service Helpers --------------------
     def set_mode(self, mode):
         req = SetMode.Request()
         req.custom_mode = mode
-        while not self.mode_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info('Waiting for set_mode service...')
-        try:
-            future = self.mode_client.call_async(req)
-            rclpy.spin_until_future_complete(self, future)
-            if future.result() is not None:
-                self.get_logger().info(f"Mode changed to {mode}")
-            else:
-                self.get_logger().error(f"Failed to change mode: {future.exception()}")
-        except Exception as e:
-            self.get_logger().error(f"Service call failed: {e}")
-    def arm(self, arm):
+        future = self.mode_srv.call_async(req)
+        rclpy.spin_until_future_complete(self, future)
+        return future.result().mode_sent
+
+    def arm(self, status):
         req = CommandBool.Request()
-        req.value = arm
-        while not self.arm_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info('Waiting for arming service...')
-        try:
-            future = self.arm_client.call_async(req)
-            rclpy.spin_until_future_complete(self, future)
-            if future.result() is not None and future.result().success:
-                self.get_logger().info(f"Arming {'successful' if arm else 'disarming successful'}")
-            else:
-                self.get_logger().error(f"Failed to {'arm' if arm else 'disarm'}: {future.exception()}")
-        except Exception as e:
-            self.get_logger().error(f"Service call failed: {e}")
-    
-    def control_loop(self):
-        if not self.current_state.connected:
-            return
-
-        # === GET POSE FROM TF (april_ros only publishes TF, not pose in msg) ===
-        if self.detected and self.tag_frame:
-            try:
-                trans = self.tf_buffer.lookup_transform(
-                    self.camera_frame,
-                    self.tag_frame,
-                    rclpy.time.Time()  # latest available transform
-                )
-                self.err_x = trans.transform.translation.x
-                self.err_y = trans.transform.translation.y
-                self.err_z = trans.transform.translation.z
-            except Exception:
-                # TF not ready yet or frame not found
-                self.detected = 0.0
-
-        if self.detected:
-            if abs(self.current_alt - self.err_z) < self.get_parameter("z_error_threshold").get_parameter_value().double_value:
-                if abs(self.err_x) < self.get_parameter("error_threshold").get_parameter_value().double_value and abs(self.err_y) < self.get_parameter("error_threshold").get_parameter_value().double_value:
-                    if self.hover_time_start is None:
-                        self.hover_time_start = time.time()
-                    elif time.time() - self.hover_time_start > self.get_parameter("low_alt_hover_time").get_parameter_value().double_value:
-                        self.get_logger().info("Landing...")
-                        self.set_mode("LAND")
-                        return
-
-            # Compute PID control
-            current_time = time.time()
-            dt = current_time - self.prev_time if self.prev_time else 0.01
-            self.prev_time = current_time
-
-            # Proportional control
-            vx = self.kp * self.err_x
-            vy = self.kp * self.err_y
-            vz = self.kp * self.err_z
-
-            # Derivative control
-            vx += self.kd * (self.err_x - self.prev_err_x) / dt
-            vy += self.kd * (self.err_y - self.prev_err_y) / dt
-            vz += self.kd * (self.err_z - self.prev_err_z) / dt
-
-            # Integral control (running sum)
-            self.integral_x += self.err_x * dt
-            self.integral_y += self.err_y * dt
-            self.integral_z += self.err_z * dt
-
-            vx += self.ki * self.integral_x
-            vy += self.ki * self.integral_y
-            vz += self.ki * self.integral_z
-
-            # Save current error for next derivative calculation
-            self.prev_err_x = self.err_x
-            self.prev_err_y = self.err_y
-            self.prev_err_z = self.err_z
-
-            # Limit velocities
-            max_vel_xy = self.get_parameter("max_vel_xy").get_parameter_value().double_value
-            max_vel_z = self.get_parameter("max_vel_z").get_parameter_value().double_value
-            vx = np.clip(vx, -max_vel_xy, max_vel_xy)
-            vy = np.clip(vy, -max_vel_xy, max_vel_xy)
-            vz = np.clip(vz, -max_vel_z, max_vel_z)
-
-            # Publish velocity command
-            vel_msg = TwistStamped()
-            vel_msg.header.stamp = self.get_clock().now().to_msg()
-            vel_msg.header.frame_id = "base_link"
-            vel_msg.twist.linear.x = vx
-            vel_msg.twist.linear.y = vy
-            vel_msg.twist.linear.z = vz
-            self.vel_pub.publish(vel_msg)
-
-        else:
-            # If no tag detected, hover in place
-            vel_msg = TwistStamped()
-            vel_msg.header.stamp = self.get_clock().now().to_msg()
-            vel_msg.header.frame_id = "base_link"
-            vel_msg.twist.linear.x = 0.0
-            vel_msg.twist.linear.y = 0.0
-            vel_msg.twist.linear.z = 0.0
-            self.vel_pub.publish(vel_msg)
+        req.value = status
+        future = self.arm_srv.call_async(req)
+        rclpy.spin_until_future_complete(self, future)
+        return future.result().success
 
     def takeoff(self, altitude):
+        req = CommandTOL.Request()
+        req.altitude = float(altitude)
+        future = self.takeoff_srv.call_async(req)
+        rclpy.spin_until_future_complete(self, future)
+        return future.result().success
+
+    # -------------------- Main Mission Logic --------------------
+    def run_mission(self):
+        # 1. Connection
+        self.get_logger().info("Waiting for FCU connection...")
+        while not self.state.connected:
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+        # 2. Set Home/Initial Altitude
+        while self.local_pos.header.stamp.sec == 0:
+            rclpy.spin_once(self, timeout_sec=0.1)
+        self.initial_alt = self.local_pos.pose.position.z
+        
+        # 3. Guided & Arm
+        self.get_logger().info("Setting GUIDED mode and Arming...")
         self.set_mode("GUIDED")
         self.arm(True)
-        # Send takeoff command (this is a placeholder, replace with actual takeoff logic)
-        self.get_logger().info(f"Taking off to {altitude} meters...")
-        # Wait until we reach the desired altitude
-        self.wait_until_altitude(altitude)
-    
-    def land(self):
-        self.get_logger().info("Landing...")
-        self.set_mode("LAND")
-        # Wait until we are on the ground
+        time.sleep(2)
+
+        # 4. Takeoff
+        target_alt_rel = self.get_parameter("takeoff_alt").get_parameter_value().double_value
+        self.get_logger().info(f"Taking off to {target_alt_rel}m")
+        self.takeoff(target_alt_rel)
+        
+        # Wait until target altitude reached
         while rclpy.ok():
-            rclpy.spin_once(self, timeout_sec=0.5)
-            if self.current_alt < 0.1:  # Assuming we are on the ground if altitude is less than 10 cm
-                self.get_logger().info("Landed successfully")
-                self.arm(False)  # Disarm after landing
+            rclpy.spin_once(self, timeout_sec=0.2)
+            if self.local_pos.pose.position.z >= (self.initial_alt + target_alt_rel - 0.3):
                 break
+        
+        self.get_logger().info("Hovering to search for tag...")
+        time.sleep(3)
 
-    def wait_until_altitude(self, target_alt, timeout=20.0):
-        start = time.time()
-        while rclpy.ok() and time.time() - start < timeout:
-            if abs(self.current_alt - target_alt) < 0.1:
-                self.get_logger().info(f"Reached altitude {target_alt:.1f}m")
-                return
-            rclpy.spin_once(self, timeout_sec=0.1)
-        self.get_logger().warn("Altitude timeout!")
+        # 5. Precision Landing Loop
+        self.precision_landing_loop()
 
-    def hover(self, duration):
-        self.get_logger().info(f"Hovering for {duration} seconds...")
-        start = time.time()
-        while rclpy.ok() and time.time() - start < duration:
+    def precision_landing_loop(self):
+        self.get_logger().info("Starting PID Precision Landing Phase")
+        
+        while rclpy.ok():
+            rclpy.spin_once(self, timeout_sec=0.05)
+            
+            # TF Lookup for Tag
+            found_now = False
+            if self.tag_frame:
+                try:
+                    trans = self.tf_buffer.lookup_transform(
+                        self.camera_frame, self.tag_frame, rclpy.time.Time(),
+                        timeout=rclpy.duration.Duration(seconds=0.02)
+                    )
+                    self.err_x = trans.transform.translation.x
+                    self.err_y = trans.transform.translation.y
+                    self.err_z = trans.transform.translation.z
+                    found_now = True
+                except (LookupException, ConnectivityException, ExtrapolationException):
+                    found_now = False
+
             vel = TwistStamped()
             vel.header.stamp = self.get_clock().now().to_msg()
             vel.header.frame_id = "base_link"
-            vel.twist.linear.x = 0.0
-            vel.twist.linear.y = 0.0
-            vel.twist.linear.z = 0.0
-            self.vel_pub.publish(vel)
-            rclpy.spin_once(self, timeout_sec=0.1)
 
-    def precision_land(self):
-        self.get_logger().info("Starting precision landing controller")
-        self.set_mode("OFFBOARD")
+            if found_now:
+                # PID Controls
+                now = time.time()
+                dt = now - self.prev_time if (now - self.prev_time) > 0 else 0.05
+                
+                kp = self.get_parameter("kp").get_parameter_value().double_value
+                kd = self.get_parameter("kd").get_parameter_value().double_value
+                
+                vx = -(kp * self.err_x) + (kd * (self.err_x - self.prev_err_x) / dt)
+                vy = (kp * self.err_y) + (kd * (self.err_y - self.prev_err_y) / dt)
+                
+                # Desent Speed: If centered, descend. If not, hover and center.
+                error_mag = np.sqrt(self.err_x**2 + self.err_y**2)
+                vz = -0.15 if error_mag < 0.1 else 0.0
+                
+                # Clamp Velocities
+                max_v = self.get_parameter("max_vel_xy").get_parameter_value().double_value
+                vel.twist.linear.x = float(np.clip(vx, -max_v, max_v))
+                vel.twist.linear.y = float(np.clip(vy, -max_v, max_v))
+                vel.twist.linear.z = float(vz)
+
+                self.prev_err_x, self.prev_err_y = self.err_x, self.err_y
+                self.prev_time = now
+            else:
+                # Hover if tag lost
+                vel.twist.linear.x = 0.0
+                vel.twist.linear.y = 0.0
+                vel.twist.linear.z = 0.0
+
+            self.vel_pub.publish(vel)
+
+            # Check if near ground to finish
+            alt_rel = self.local_pos.pose.position.z - self.initial_alt
+            if alt_rel < self.get_parameter("land_alt_threshold").get_parameter_value().double_value:
+                self.get_logger().info("Final Landing...")
+                self.set_mode("LAND")
+                break
 
 def main(args=None):
     rclpy.init(args=args)
-    node = PositionBasedLanding()
-    node.takeoff(node.get_parameter("takeoff_alt").get_parameter_value().double_value)
-    node.hover(node.get_parameter("hover_time").get_parameter_value().double_value)
-    node.precision_land()
-    rclpy.spin(node)
-    rclpy.shutdown()
+    node = AutonomousPrecisionLanding()
+    try:
+        node.run_mission()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

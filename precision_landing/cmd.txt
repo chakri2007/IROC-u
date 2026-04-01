@@ -1,0 +1,6 @@
+ros2 launch realsense2_camera rs_launch.py unite_imu_method:=2 enable_accel:=true enable_gyro:=true enable_infra1:=true enable_infra2:=true
+
+ros2 run apriltag_ros apriltag_node   --ros-args   -r image_rect:=/camera/camera/color/image_raw   -r camera_info:=/camera/camera/color/camera_info   --params-file ~/precision_landing/src/apriltag_ros/cfg/d455.yaml
+
+
+ros2 launch mavros apm.launch fcu_url:="serial:///dev/ttyACM0:57600"
