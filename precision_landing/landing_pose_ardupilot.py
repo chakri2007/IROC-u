@@ -5,12 +5,16 @@ from rclpy.node import Node
 import numpy as np
 import time
 from rclpy.qos import qos_profile_sensor_data, QoSProfile, ReliabilityPolicy, DurabilityPolicy
+
 from geometry_msgs.msg import TwistStamped, PoseStamped
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, SetMode, CommandTOL
 from apriltag_msgs.msg import AprilTagDetectionArray
+from std_msgs.msg import Int32
+
 import tf2_ros
 from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
+
 
 class AutonomousPrecisionLanding(Node):
 
@@ -27,13 +31,12 @@ class AutonomousPrecisionLanding(Node):
         self.state = State()
         self.local_pos = PoseStamped()
         self.initial_alt = 0.0
-        
+
         # Tracking State
         self.tag_frame = ""
         self.err_x = 0.0
         self.err_y = 0.0
         self.err_z = 0.0
-        self.detected = False
 
         # PID memory
         self.prev_err_x = 0.0
@@ -42,10 +45,10 @@ class AutonomousPrecisionLanding(Node):
 
         # ================== PARAMETERS ==================
         self.declare_parameter("takeoff_alt", 2.0)
-        self.declare_parameter("kp", 0.5)   # Adjusted for base_link velocity scale
+        self.declare_parameter("kp", 0.5)
         self.declare_parameter("kd", 0.0)
         self.declare_parameter("max_vel_xy", 0.3)
-        self.declare_parameter("land_alt_threshold", 0.2) 
+        self.declare_parameter("land_alt_threshold", 0.2)
 
         # TF setup
         self.tf_buffer = tf2_ros.Buffer()
@@ -56,7 +59,10 @@ class AutonomousPrecisionLanding(Node):
         self.create_subscription(State, '/mavros/state', self.state_cb, qos)
         self.create_subscription(PoseStamped, '/mavros/local_position/pose', self.pos_cb, qos)
         self.create_subscription(AprilTagDetectionArray, '/detections', self.aruco_cb, qos_profile_sensor_data)
-        
+
+        # FIXED MESSAGE TYPE
+        self.create_subscription(Int32, '/mission_initiate', self.mission_initiate_cb, 10)
+
         self.vel_pub = self.create_publisher(TwistStamped, '/mavros/setpoint_velocity/cmd_vel', 10)
 
         # Services
@@ -64,7 +70,15 @@ class AutonomousPrecisionLanding(Node):
         self.mode_srv = self.create_client(SetMode, '/mavros/set_mode')
         self.takeoff_srv = self.create_client(CommandTOL, '/mavros/cmd/takeoff')
 
+        # Mission State
+        self.mission_initiated = False
+
     # -------------------- Callbacks --------------------
+    def mission_initiate_cb(self, msg):
+        if msg.data == 1 and not self.mission_initiated:
+            self.get_logger().info("Mission Initiation Received!")
+            self.mission_initiated = True
+
     def state_cb(self, msg):
         self.state = msg
 
@@ -103,17 +117,26 @@ class AutonomousPrecisionLanding(Node):
 
     # -------------------- Main Mission Logic --------------------
     def run_mission(self):
+
+        # WAIT FOR TRIGGER
+        self.get_logger().info("Waiting for mission initiation...")
+        while rclpy.ok() and not self.mission_initiated:
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+        self.get_logger().info("Mission Started!")
+
         # 1. Connection
         self.get_logger().info("Waiting for FCU connection...")
         while not self.state.connected:
             rclpy.spin_once(self, timeout_sec=0.1)
 
-        # 2. Set Home/Initial Altitude
+        # 2. Get Initial Altitude
         while self.local_pos.header.stamp.sec == 0:
             rclpy.spin_once(self, timeout_sec=0.1)
+
         self.initial_alt = self.local_pos.pose.position.z
-        
-        # 3. Guided & Arm
+
+        # 3. GUIDED & Arm
         self.get_logger().info("Setting GUIDED mode and Arming...")
         self.set_mode("GUIDED")
         self.arm(True)
@@ -123,37 +146,41 @@ class AutonomousPrecisionLanding(Node):
         target_alt_rel = self.get_parameter("takeoff_alt").get_parameter_value().double_value
         self.get_logger().info(f"Taking off to {target_alt_rel}m")
         self.takeoff(target_alt_rel)
-        
-        # Wait until target altitude reached
+
         while rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.2)
             if self.local_pos.pose.position.z >= (self.initial_alt + target_alt_rel - 0.3):
                 break
-        
+
         self.get_logger().info("Hovering to search for tag...")
         time.sleep(3)
 
-        # 5. Precision Landing Loop
+        # 5. Precision Landing
         self.precision_landing_loop()
 
+    # -------------------- Precision Landing --------------------
     def precision_landing_loop(self):
-        self.get_logger().info("Starting PID Precision Landing Phase")
-        
+        self.get_logger().info("Starting Precision Landing")
+
         while rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.05)
-            
-            # TF Lookup for Tag
+
             found_now = False
+
             if self.tag_frame:
                 try:
                     trans = self.tf_buffer.lookup_transform(
-                        self.camera_frame, self.tag_frame, rclpy.time.Time(),
+                        self.camera_frame,
+                        self.tag_frame,
+                        rclpy.time.Time(),
                         timeout=rclpy.duration.Duration(seconds=0.02)
                     )
+
                     self.err_x = trans.transform.translation.x
                     self.err_y = trans.transform.translation.y
                     self.err_z = trans.transform.translation.z
                     found_now = True
+
                 except (LookupException, ConnectivityException, ExtrapolationException):
                     found_now = False
 
@@ -162,46 +189,47 @@ class AutonomousPrecisionLanding(Node):
             vel.header.frame_id = "base_link"
 
             if found_now:
-                # PID Controls
                 now = time.time()
-                dt = now - self.prev_time if (now - self.prev_time) > 0 else 0.05
-                
-                kp = self.get_parameter("kp").get_parameter_value().double_value
-                kd = self.get_parameter("kd").get_parameter_value().double_value
-                
+                dt = max(now - self.prev_time, 0.05)
+
+                kp = self.get_parameter("kp").value
+                kd = self.get_parameter("kd").value
+
                 vx = -(kp * self.err_x) + (kd * (self.err_x - self.prev_err_x) / dt)
                 vy = (kp * self.err_y) + (kd * (self.err_y - self.prev_err_y) / dt)
-                
-                # Desent Speed: If centered, descend. If not, hover and center.
+
                 error_mag = np.sqrt(self.err_x**2 + self.err_y**2)
                 vz = -0.15 if error_mag < 0.1 else 0.0
-                
-                # Clamp Velocities
-                max_v = self.get_parameter("max_vel_xy").get_parameter_value().double_value
+
+                max_v = self.get_parameter("max_vel_xy").value
+
                 vel.twist.linear.x = float(np.clip(vx, -max_v, max_v))
                 vel.twist.linear.y = float(np.clip(vy, -max_v, max_v))
                 vel.twist.linear.z = float(vz)
 
-                self.prev_err_x, self.prev_err_y = self.err_x, self.err_y
+                self.prev_err_x = self.err_x
+                self.prev_err_y = self.err_y
                 self.prev_time = now
+
             else:
-                # Hover if tag lost
                 vel.twist.linear.x = 0.0
                 vel.twist.linear.y = 0.0
                 vel.twist.linear.z = 0.0
 
             self.vel_pub.publish(vel)
 
-            # Check if near ground to finish
+            # Landing condition
             alt_rel = self.local_pos.pose.position.z - self.initial_alt
-            if alt_rel < self.get_parameter("land_alt_threshold").get_parameter_value().double_value:
-                self.get_logger().info("Final Landing...")
+            if alt_rel < self.get_parameter("land_alt_threshold").value:
+                self.get_logger().info("Switching to LAND mode")
                 self.set_mode("LAND")
                 break
+
 
 def main(args=None):
     rclpy.init(args=args)
     node = AutonomousPrecisionLanding()
+
     try:
         node.run_mission()
     except KeyboardInterrupt:
@@ -209,6 +237,7 @@ def main(args=None):
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()
