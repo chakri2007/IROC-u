@@ -698,6 +698,8 @@
           <div class="tag teal">LIVE // FPV_FEED_01</div>
           <div id="tag-video" class="tag red">VIDEO: LOST</div>
           <div id="tag-ros" class="tag red" onclick="forceReconnect()" style="cursor:pointer">ROS: LOST</div>
+          <div id="tag-mode"  class="tag slate">MODE: —</div>
+          <div id="tag-armed" class="tag slate">DISARMED</div>
         </div>
 
         <!-- Top-right tags -->
@@ -742,6 +744,10 @@
             <!-- filled by JS -->
           </div>
           <div class="battery-footer">
+            <span class="lbl">State of Charge</span>
+            <span id="val-soc" class="val">0%</span>
+          </div>
+          <div class="battery-footer">
             <span class="lbl">Voltage</span>
             <span id="val-voltage" class="val">0.00V</span>
           </div>
@@ -782,10 +788,10 @@
       </div>
       <div class="stat-card">
         <div class="stat-info">
-          <span class="stat-label">Lens Focus</span>
-          <span class="stat-value">0.85 AF</span>
+          <span class="stat-label">Climb</span>
+          <span id="val-climb" class="stat-value">0.0 m/s</span>
         </div>
-        <div class="stat-icon">FOC</div>
+        <div class="stat-icon">V-S</div>
       </div>
       <div class="stat-card">
         <div class="stat-info">
@@ -989,6 +995,14 @@ function updateDashboard(d) {
     barsEl.appendChild(b);
   }
   document.getElementById('val-voltage').textContent = volt.toFixed(2) + 'V';
+  document.getElementById('val-soc').textContent     = Math.round(pct) + '%';
+
+  // Flight state: mode + armed/landed (from /mavros/state + /mavros/extended_state)
+  document.getElementById('tag-mode').textContent = 'MODE: ' + (d.mode || '—');
+  const armedEl = document.getElementById('tag-armed');
+  const landed  = d.landedState && d.landedState !== 'UNDEFINED' ? ' · ' + d.landedState : '';
+  armedEl.textContent = d.armed ? ('ARMED' + landed) : 'DISARMED';
+  armedEl.className   = 'tag ' + (d.armed ? 'orange' : 'slate');
 
   // Altitude slider (cap at 50m for display)
   const altPct = Math.min((alt / 50) * 100, 100);
@@ -997,6 +1011,7 @@ function updateDashboard(d) {
 
   // Stats
   document.getElementById('val-speed').textContent  = speed.toFixed(1) + ' m/s';
+  document.getElementById('val-climb').textContent  = (vel.climbRate || 0).toFixed(1) + ' m/s';
   document.getElementById('val-height').textContent = alt.toFixed(1)   + ' M';
 
   // Map dot: simple animation based on position

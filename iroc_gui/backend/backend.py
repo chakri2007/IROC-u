@@ -32,6 +32,7 @@ try:
     from nav_msgs.msg import Odometry
     from sensor_msgs.msg import BatteryState
     from std_msgs.msg import String
+    from mavros_msgs.msg import State, ExtendedState
     ROS_AVAILABLE = True
 except ImportError:
     ROS_AVAILABLE = False
@@ -39,7 +40,11 @@ except ImportError:
 
 # ── Shared state ─────────────────────────────────────────────────────────────
 state = {
-    "connected":   False,
+    "connected":   False,          # ROS bridge is receiving
+    "fcuConnected":False,          # MAVROS ↔ flight controller link (from /mavros/state)
+    "armed":       False,
+    "mode":        "",             # flight mode, e.g. OFFBOARD / AUTO.LAND
+    "landedState": "UNDEFINED",    # ON_GROUND / IN_AIR / TAKEOFF / LANDING
     "position":    {"x": 0.0, "y": 0.0, "z": 0.0},
     "orientation": {"roll": 0.0, "pitch": 0.0, "yaw": 0.0},
     "velocity":    {"horizontal": 0.0, "climbRate": 0.0},
@@ -86,6 +91,10 @@ class Battery(BaseModel):
 
 class Telemetry(BaseModel):
     connected: bool = False
+    fcuConnected: bool = False
+    armed: bool = False
+    mode: str = ""
+    landedState: str = "UNDEFINED"
     position: Position = Field(default_factory=Position)
     orientation: Orientation = Field(default_factory=Orientation)
     velocity: Velocity = Field(default_factory=Velocity)
@@ -120,9 +129,11 @@ if ROS_AVAILABLE:
         def __init__(self):
             super().__init__('gcs_flask_bridge')
 
-            self.create_subscription(Odometry,     '/mavros/local_position/odom', self.on_odom,      qos_profile_sensor_data)
-            self.create_subscription(BatteryState, '/mavros/battery',             self.on_battery,   qos_profile_sensor_data)
-            self.create_subscription(String,       '/seed_detections',            self.on_detection, 10)
+            self.create_subscription(Odometry,     '/mavros/local_position/odom', self.on_odom,           qos_profile_sensor_data)
+            self.create_subscription(BatteryState, '/mavros/battery',             self.on_battery,        qos_profile_sensor_data)
+            self.create_subscription(String,       '/seed_detections',            self.on_detection,      10)
+            self.create_subscription(State,        '/mavros/state',               self.on_state,          10)
+            self.create_subscription(ExtendedState,'/mavros/extended_state',      self.on_extended_state, 10)
 
             with state_lock:
                 state["connected"] = True
@@ -154,6 +165,19 @@ if ROS_AVAILABLE:
             except Exception as e:
                 self.get_logger().error(f'Detection parse error: {e}')
 
+        def on_state(self, msg):
+            with state_lock:
+                state["fcuConnected"] = msg.connected
+                state["armed"]        = msg.armed
+                state["mode"]         = msg.mode
+
+        # mavros_msgs/ExtendedState.landed_state enum → human-readable label
+        _LANDED = {0: "UNDEFINED", 1: "ON_GROUND", 2: "IN_AIR", 3: "TAKEOFF", 4: "LANDING"}
+
+        def on_extended_state(self, msg):
+            with state_lock:
+                state["landedState"] = self._LANDED.get(msg.landed_state, "UNDEFINED")
+
 
 # ── ROS2 spin thread ─────────────────────────────────────────────────────────
 def ros_thread():
@@ -161,13 +185,18 @@ def ros_thread():
         t = 0
         while True:
             t += 0.05
+            alt_mock = abs(math.sin(t*0.3))*10
             with state_lock:
                 state["connected"]   = True
-                state["position"]    = {"x": math.sin(t)*5, "y": math.cos(t)*5, "z": abs(math.sin(t*0.3))*10}
+                state["fcuConnected"]= True
+                state["armed"]       = True
+                state["mode"]        = "OFFBOARD"
+                state["landedState"] = "IN_AIR" if alt_mock > 0.3 else "ON_GROUND"
+                state["position"]    = {"x": math.sin(t)*5, "y": math.cos(t)*5, "z": alt_mock}
                 state["orientation"] = {"roll": math.sin(t*0.7)*15, "pitch": math.cos(t*0.5)*10, "yaw": (t*20)%360}
                 state["velocity"]    = {"horizontal": abs(math.sin(t))*8, "climbRate": math.cos(t*0.4)*2}
                 state["battery"]     = {"percentage": max(0, 80-t*0.1), "voltage": max(10, 14.8-t*0.01)}
-                state["altitude"]    = abs(math.sin(t*0.3))*10
+                state["altitude"]    = alt_mock
             time.sleep(0.05)
         return
 
