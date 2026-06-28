@@ -776,7 +776,7 @@
       <div class="stat-card">
         <div class="stat-info">
           <span class="stat-label">Speed</span>
-          <span id="val-speed" class="stat-value">0.0 km/h</span>
+          <span id="val-speed" class="stat-value">0.0 m/s</span>
         </div>
         <div class="stat-icon">SPD</div>
       </div>
@@ -875,6 +875,14 @@ let popupTimer  = null;
 let videoOk     = false;
 let rosOk       = false;
 
+// ── Escape any value before injecting it into innerHTML (detections come from
+//    the /seed_detections ROS topic, so treat them as untrusted) ─────────────
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 // ── Tab switching ─────────────────────────────────────────────────────────────
 function switchTab(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -884,7 +892,7 @@ function switchTab(name) {
 }
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
-// Flask proxies the Jetson MJPEG stream at /video_feed
+// Backend (FastAPI) proxies the Jetson MJPEG stream at /video_feed
 const VIDEO_URL = API_BASE + '/video_feed';
 
 function boot() {
@@ -924,16 +932,17 @@ async function pollDetections() {
     if (!r.ok) throw new Error(r.status);
     const incoming = await r.json();
 
-    // Merge new detections (preserve referenceImg)
+    // Merge: add genuinely-new detections (newest first) and update existing
+    // ones in place (e.g. status Pending → Verified), preserving any locally
+    // uploaded referenceImg across backend refreshes.
     incoming.forEach(det => {
-      const existing = detections.find(d => d.id === det.id);
-      if (!existing) {
-        detections.unshift({
-          ...det,
-          referenceImg: det.referenceImg || null
-        });
-        // Toast
-        showPopup(det);
+      const existing = detections.find(d => String(d.id) === String(det.id));
+      if (existing) {
+        const keepRef = existing.referenceImg || det.referenceImg || null;
+        Object.assign(existing, det, { referenceImg: keepRef });
+      } else {
+        detections.unshift({ ...det, referenceImg: det.referenceImg || null });
+        showPopup(det);   // toast only for genuinely new detections
       }
     });
     detections = detections.slice(0, 50);
@@ -987,7 +996,7 @@ function updateDashboard(d) {
   document.getElementById('val-alt').textContent    = alt.toFixed(1) + 'm';
 
   // Stats
-  document.getElementById('val-speed').textContent  = speed.toFixed(1) + ' km/h';
+  document.getElementById('val-speed').textContent  = speed.toFixed(1) + ' m/s';
   document.getElementById('val-height').textContent = alt.toFixed(1)   + ' M';
 
   // Map dot: simple animation based on position
@@ -1039,7 +1048,7 @@ function updateAnalysisPage() {
 
   // Re-render cards (keep it simple – clear & rebuild)
   grid.innerHTML = '';
-  detections.slice(0, 3).forEach(det => {
+  detections.forEach(det => {
     grid.appendChild(buildDetCard(det));
   });
 }
@@ -1052,20 +1061,20 @@ function buildDetCard(det) {
   const ts = new Date((det.timestamp || 0) * 1000).toLocaleTimeString();
 
   card.innerHTML = `
-    <div class="status-badge ${isVerified ? 'verified' : 'pending'}">${det.status || 'Pending'}</div>
+    <div class="status-badge ${isVerified ? 'verified' : 'pending'}">${esc(det.status || 'Pending')}</div>
 
     <!-- Reference image -->
     <div class="img-slot">
       <span class="slot-label">REF_DATA</span>
       ${det.referenceImg
-        ? `<img src="${det.referenceImg}" alt="Reference" style="filter:grayscale(1) opacity(.6)" />`
+        ? `<img src="${esc(det.referenceImg)}" alt="Reference" style="filter:grayscale(1) opacity(.6)" />`
         : `<div class="empty-label">No Reference Synced</div>`}
     </div>
 
     <!-- Detected image -->
     <div class="img-slot">
       <span class="slot-label scan">SCAN_MATCH</span>
-      <img src="${det.detectedImg}" alt="Detection" />
+      <img src="${esc(det.detectedImg)}" alt="Detection" />
       <div class="bbox"><div class="bbox-tl"></div><div class="bbox-br"></div></div>
     </div>
 
@@ -1087,13 +1096,20 @@ function buildDetCard(det) {
         <div class="det-actions">
           <label class="btn-ref">
             Upload Reference
-            <input type="file" accept="image/*" style="display:none" onchange="handleRefUpload(event, ${det.id})" />
+            <input type="file" accept="image/*" style="display:none" />
           </label>
-          <button class="btn-dl" onclick="downloadDetection(${det.id})">Download</button>
+          <button class="btn-dl" type="button">Download</button>
         </div>
       </div>
     </div>
   `;
+
+  // Wire actions with direct object references — no id interpolated into HTML,
+  // so non-numeric/string ids can't break the handler.
+  card.querySelector('.btn-dl').addEventListener('click', () => downloadDetection(det.id));
+  const refInput = card.querySelector('.btn-ref input');
+  if (refInput) refInput.addEventListener('change', (e) => handleRefUpload(e, det.id));
+
   return card;
 }
 
@@ -1124,7 +1140,7 @@ function handleRefUpload(event, id) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    const det = detections.find(d => d.id === id);
+    const det = detections.find(d => String(d.id) === String(id));
     if (det) { det.referenceImg = e.target.result; updateAnalysisPage(); }
   };
   reader.readAsDataURL(file);
@@ -1132,7 +1148,7 @@ function handleRefUpload(event, id) {
 
 // ── Download detection image ──────────────────────────────────────────────────
 function downloadDetection(id) {
-  const det = detections.find(d => d.id === id);
+  const det = detections.find(d => String(d.id) === String(id));
   if (!det) return;
   const a = document.createElement('a');
   a.href = det.detectedImg;
