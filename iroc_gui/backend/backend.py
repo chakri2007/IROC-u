@@ -1,14 +1,18 @@
 import asyncio
+import base64
+import collections
 import json
 import math
+import queue
 import threading
 import time
 import urllib.request
 
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel, Field
@@ -24,19 +28,57 @@ JETSON_STREAM_URL  = f"http://{JETSON_IP}:{JETSON_STREAM_PORT}/"
 # ── Push rate for the WebSocket telemetry channel ────────────────────────────
 WS_PUSH_HZ = 10.0
 
+# ── On-dock auto-indexing defaults (overridable via POST /api/trigger_indexing)
+DEFAULT_ROSBAG_PATH   = "/home/jetson/mission_rosbag"
+DEFAULT_OUTPUT_DB_PATH = "/home/jetson/embeddings.pt"
+
 # ── Try importing rclpy (ROS2) ───────────────────────────────────────────────
 try:
+    import cv2
+    import numpy as np
+
     import rclpy
     from rclpy.node import Node
     from rclpy.qos import qos_profile_sensor_data
     from nav_msgs.msg import Odometry
     from sensor_msgs.msg import BatteryState
+    from sensor_msgs.msg import Image as RosImage
     from std_msgs.msg import String
     from mavros_msgs.msg import State, ExtendedState
+    from cv_bridge import CvBridge
     ROS_AVAILABLE = True
 except ImportError:
     ROS_AVAILABLE = False
     print("[WARN] rclpy not found – running with mock data")
+
+# ── Semantic-retrieval interfaces (separate package; may not be built) ───────
+try:
+    from semantic_retrieval_interfaces.msg import SemanticMatch
+    from semantic_retrieval_interfaces.srv import TriggerIndexing, GetHdFrame
+    SEMANTIC_AVAILABLE = True
+except ImportError:
+    SEMANTIC_AVAILABLE = False
+    print("[WARN] semantic_retrieval_interfaces not found – semantic features limited")
+
+
+# ── Log ring buffer (IN = ROS→backend, OUT = GUI→ROS, SYS = internal) ────────
+MAX_LOGS   = 500
+log_buffer = collections.deque(maxlen=MAX_LOGS)
+log_lock   = threading.Lock()
+
+
+def push_log(direction: str, topic: str, summary: str, data: Optional[dict] = None):
+    entry = {
+        "ts":        time.time(),
+        "ts_human":  datetime.utcnow().strftime("%H:%M:%S.%f")[:-3],
+        "direction": direction,
+        "topic":     topic,
+        "summary":   summary,
+        "data":      data or {},
+    }
+    with log_lock:
+        log_buffer.append(entry)
+
 
 # ── Shared state ─────────────────────────────────────────────────────────────
 state = {
@@ -50,20 +92,61 @@ state = {
     "velocity":    {"horizontal": 0.0, "climbRate": 0.0},
     "battery":     {"percentage": 0.0, "voltage": 0.0},
     "altitude":    0.0,
-    "detections":  [],
+
+    # --- VSLAM ---
+    "vslam_status": "OFFLINE",
+    "vslam_pose":   {"x": 0.0, "y": 0.0, "z": 0.0},
+    "vslam_path":   [],            # capped-200 list of {x,y}
+
+    # --- semantic retrieval ---
+    "semantic_status":  "IDLE",
+    "semantic_results": {},        # seed_name → result dict
+    "seeds":            [],        # registered seed names (publish order / mock)
+
+    # --- docking / autonomous charging ---
+    "dock_status": "UNKNOWN",
+
+    # --- indexing job state ---
+    "indexing": {"in_progress": False, "frames_indexed": 0, "message": "", "submitted": False},
 }
 state_lock = threading.Lock()
 
+# Keys that make up the flight-telemetry snapshot (everything Telemetry models).
+TELEMETRY_KEYS = (
+    "connected", "fcuConnected", "armed", "mode", "landedState",
+    "position", "orientation", "velocity", "battery", "altitude",
+)
+
+# ── Executor-task queue: rclpy runs in the daemon thread, so any publish /
+#    service call from a request handler must be MARSHALLED onto that thread.
+#    A node timer drains this queue, executing each task on the executor. ──────
+_exec_queue: "queue.Queue" = queue.Queue()
+_node = None  # type: Optional[Any]
+
+
+def _enqueue_task(fn):
+    """Schedule `fn(node)` to run on the rclpy executor thread."""
+    _exec_queue.put(fn)
+
 
 def telemetry_snapshot() -> Dict[str, Any]:
-    """Thread-safe copy of state without the (potentially large) detections list."""
+    """Thread-safe copy of the flight-telemetry slice of state."""
     with state_lock:
-        return {k: v for k, v in state.items() if k != "detections"}
+        return {k: state[k] for k in TELEMETRY_KEYS}
 
 
-def detections_snapshot() -> List[Dict[str, Any]]:
+def full_snapshot() -> Dict[str, Any]:
+    """Thread-safe snapshot for the WebSocket push (telemetry + semantic/VSLAM)."""
     with state_lock:
-        return list(state["detections"])
+        return {
+            "telemetry":        {k: state[k] for k in TELEMETRY_KEYS},
+            "semantic_results": dict(state["semantic_results"]),
+            "semantic_status":  state["semantic_status"],
+            "vslam_status":     state["vslam_status"],
+            "vslam_pose":       dict(state["vslam_pose"]),
+            "vslam_path":       list(state["vslam_path"]),
+            "dock_status":      state["dock_status"],
+        }
 
 
 # ── Telemetry schema (typed → shows up in /docs) ─────────────────────────────
@@ -106,6 +189,12 @@ class Status(BaseModel):
     connected: bool = False
 
 
+class TriggerIndexingRequest(BaseModel):
+    rosbag_path: str = DEFAULT_ROSBAG_PATH
+    output_db_path: str = DEFAULT_OUTPUT_DB_PATH
+    force_reindex: bool = False
+
+
 # ── Quaternion → Euler (degrees) ─────────────────────────────────────────────
 def quaternion_to_euler(x, y, z, w):
     sinr_cosp = 2 * (w * x + y * z)
@@ -126,19 +215,66 @@ def quaternion_to_euler(x, y, z, w):
 # ── ROS2 Node ────────────────────────────────────────────────────────────────
 if ROS_AVAILABLE:
     class DroneNode(Node):
-        def __init__(self):
-            super().__init__('gcs_flask_bridge')
+        # mavros_msgs/ExtendedState.landed_state enum → human-readable label
+        _LANDED = {0: "UNDEFINED", 1: "ON_GROUND", 2: "IN_AIR", 3: "TAKEOFF", 4: "LANDING"}
 
+        def __init__(self):
+            super().__init__('gcs_fastapi_bridge')
+            self.bridge = CvBridge()
+            self._dock_triggered = False
+
+            # ── MAVROS (unchanged) ─────────────────────────────────────────
             self.create_subscription(Odometry,     '/mavros/local_position/odom', self.on_odom,           qos_profile_sensor_data)
             self.create_subscription(BatteryState, '/mavros/battery',             self.on_battery,        qos_profile_sensor_data)
-            self.create_subscription(String,       '/seed_detections',            self.on_detection,      10)
             self.create_subscription(State,        '/mavros/state',               self.on_state,          10)
             self.create_subscription(ExtendedState,'/mavros/extended_state',      self.on_extended_state, 10)
 
+            # ── VSLAM ──────────────────────────────────────────────────────
+            self.create_subscription(String,   '/visual_slam/status',            self.on_vslam_status, 10)
+            self.create_subscription(Odometry, '/visual_slam/tracking/odometry', self.on_vslam_odom,   qos_profile_sensor_data)
+
+            # ── Semantic retrieval status ──────────────────────────────────
+            self.create_subscription(String, '/semantic_retrieval/status', self.on_semantic_status, 10)
+
+            # ── Docking / autonomous charging ──────────────────────────────
+            self.create_subscription(String, '/drone/status', self.on_drone_status, 10)
+
+            # ── Publisher: runtime seeds (header.frame_id = seed name) ─────
+            self.seed_pub = self.create_publisher(RosImage, '/semantic_retrieval/add_seed', 10)
+
+            # ── Semantic results + service clients (separate package) ──────
+            self.trigger_indexing_client = None
+            self.get_hd_frame_client     = None
+            if SEMANTIC_AVAILABLE:
+                self.create_subscription(SemanticMatch, '/semantic_retrieval/results', self.on_semantic_result, 10)
+                self.trigger_indexing_client = self.create_client(TriggerIndexing, '/semantic_retrieval/trigger_indexing')
+                self.get_hd_frame_client     = self.create_client(GetHdFrame,      '/semantic_retrieval/get_hd_frame')
+                self.get_logger().info('[GCS] Subscribed to SemanticMatch results + service clients ready')
+            else:
+                self.get_logger().warn('semantic_retrieval_interfaces not built — semantic results disabled')
+
+            # ── Drain queued publishes / service calls on the executor ─────
+            self.create_timer(0.02, self._drain_tasks)
+
             with state_lock:
                 state["connected"] = True
+            push_log("SYS", "node", "DroneNode initialised — all subscriptions active")
             self.get_logger().info('[GCS] Subscribed to ROS2 topics')
 
+        # ── Marshalled task drain (runs on executor thread) ────────────────
+        def _drain_tasks(self):
+            while True:
+                try:
+                    fn = _exec_queue.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    fn(self)
+                except Exception as e:
+                    push_log("SYS", "exec", f"task error: {e}")
+                    self.get_logger().error(f'exec task error: {e}')
+
+        # ── MAVROS ─────────────────────────────────────────────────────────
         def on_odom(self, msg):
             pos = msg.pose.pose.position
             ori = msg.pose.pose.orientation
@@ -151,19 +287,15 @@ if ROS_AVAILABLE:
                 state["altitude"]    = pos.z
 
         def on_battery(self, msg):
+            # Guard NaN: `or` lets NaN through (NaN is truthy), so test isfinite.
+            pct = msg.percentage
+            if not math.isfinite(pct):
+                pct = 0.0
+            volt = msg.voltage
+            if not math.isfinite(volt):
+                volt = 0.0
             with state_lock:
-                state["battery"] = {
-                    "percentage": (msg.percentage or 0.0) * 100,
-                    "voltage":    msg.voltage or 0.0,
-                }
-
-        def on_detection(self, msg):
-            try:
-                detection = json.loads(msg.data)
-                with state_lock:
-                    state["detections"] = ([detection] + state["detections"])[:50]
-            except Exception as e:
-                self.get_logger().error(f'Detection parse error: {e}')
+                state["battery"] = {"percentage": pct * 100, "voltage": volt}
 
         def on_state(self, msg):
             with state_lock:
@@ -171,46 +303,273 @@ if ROS_AVAILABLE:
                 state["armed"]        = msg.armed
                 state["mode"]         = msg.mode
 
-        # mavros_msgs/ExtendedState.landed_state enum → human-readable label
-        _LANDED = {0: "UNDEFINED", 1: "ON_GROUND", 2: "IN_AIR", 3: "TAKEOFF", 4: "LANDING"}
-
         def on_extended_state(self, msg):
             with state_lock:
                 state["landedState"] = self._LANDED.get(msg.landed_state, "UNDEFINED")
 
+        # ── VSLAM ──────────────────────────────────────────────────────────
+        def on_vslam_status(self, msg):
+            with state_lock:
+                state["vslam_status"] = msg.data
+            push_log("IN", "/visual_slam/status", msg.data)
+
+        def on_vslam_odom(self, msg):
+            pos = msg.pose.pose.position
+            with state_lock:
+                state["vslam_pose"] = {"x": pos.x, "y": pos.y, "z": pos.z}
+                trail = state["vslam_path"]
+                trail.append({"x": pos.x, "y": pos.y})
+                if len(trail) > 200:
+                    del trail[:-200]
+
+        # ── Semantic status ────────────────────────────────────────────────
+        def on_semantic_status(self, msg):
+            with state_lock:
+                state["semantic_status"] = msg.data
+                # Status often reports indexing progress.
+                if "INDEX" in msg.data.upper():
+                    state["indexing"]["message"] = msg.data
+            push_log("IN", "/semantic_retrieval/status", msg.data)
+
+        # ── Semantic results ───────────────────────────────────────────────
+        def on_semantic_result(self, msg):
+            seed = msg.seed_name
+
+            # Unpack stride-3 positions + stride-4 orientations with length guards.
+            positions  = list(msg.positions_xyz)
+            pose_valid = list(msg.pose_valid)
+            poses = []
+            for i in range(msg.match_count):
+                p_off = i * 3
+                valid = bool(pose_valid[i]) if i < len(pose_valid) else False
+                if len(positions) >= p_off + 3:
+                    x, y, z = positions[p_off], positions[p_off + 1], positions[p_off + 2]
+                else:
+                    x, y, z = 0.0, 0.0, 0.0
+                    valid = False
+                poses.append({"valid": valid, "x": x, "y": y, "z": z})
+
+            result = {
+                "seed_name":            seed,
+                "has_match":            msg.has_match,
+                "match_count":          msg.match_count,
+                "frame_indices":        list(msg.frame_indices),
+                "timestamps_sec":       list(msg.timestamps_sec),
+                "similarity_scores":    list(msg.similarity_scores),
+                "similarity_threshold": msg.similarity_threshold,
+                "poses":                poses,
+                # NOTE: msg.hd_frames intentionally NOT read (always empty now;
+                # fetched on demand via GetHdFrame service).
+                "updated_at":           time.time(),
+            }
+
+            with state_lock:
+                state["semantic_results"][seed] = result
+                if seed not in state["seeds"]:
+                    state["seeds"].append(seed)
+
+            scores = list(msg.similarity_scores)
+            summary = (
+                f"seed={seed} has_match={msg.has_match} matches={msg.match_count} "
+                f"best={scores[0]:.3f}"
+                if msg.has_match and scores
+                else f"seed={seed} NO_MATCH (thr {msg.similarity_threshold:.2f})"
+            )
+            push_log("IN", "/semantic_retrieval/results", summary,
+                     {"seed": seed, "has_match": msg.has_match, "match_count": msg.match_count})
+
+        # ── Docking → fire on-dock auto-trigger ONCE ───────────────────────
+        def on_drone_status(self, msg):
+            data = msg.data
+            with state_lock:
+                state["dock_status"] = data
+            push_log("IN", "/drone/status", data)
+
+            if data.strip().upper() in ("LANDED", "DOCKED") and not self._dock_triggered:
+                self._dock_triggered = True
+                push_log("SYS", "dock", "Docked → auto-triggering indexing (parallel with charging)")
+                _trigger_indexing(DEFAULT_ROSBAG_PATH, DEFAULT_OUTPUT_DB_PATH, False)
+
+
+# ── Service-call helpers (marshalled onto the executor thread) ───────────────
+def _trigger_indexing(rosbag_path: str, output_db_path: str, force_reindex: bool) -> Dict[str, Any]:
+    """Fire-and-forget TriggerIndexing. Updates state["indexing"] from the response."""
+    with state_lock:
+        state["indexing"] = {
+            "in_progress":    True,
+            "frames_indexed": 0,
+            "message":        "submitted",
+            "submitted":      True,
+        }
+
+    if not (ROS_AVAILABLE and SEMANTIC_AVAILABLE and _node is not None
+            and _node.trigger_indexing_client is not None):
+        # Mock / no-ROS: pretend it queued.
+        with state_lock:
+            state["indexing"]["message"] = "queued (mock — no ROS service)"
+        push_log("OUT", "/semantic_retrieval/trigger_indexing",
+                 f"(mock) indexing requested: {rosbag_path}")
+        return {"submitted": True, "queued": True, "mock": True}
+
+    def task(node):
+        client = node.trigger_indexing_client
+        if not client.service_is_ready():
+            with state_lock:
+                state["indexing"]["in_progress"] = False
+                state["indexing"]["message"]     = "service unavailable"
+            push_log("SYS", "trigger_indexing", "service not ready")
+            return
+        req = TriggerIndexing.Request()
+        req.rosbag_path   = rosbag_path
+        req.output_db_path = output_db_path
+        req.force_reindex = force_reindex
+        future = client.call_async(req)
+
+        def done(fut):
+            try:
+                res = fut.result()
+                with state_lock:
+                    state["indexing"] = {
+                        "in_progress":    False,
+                        "frames_indexed": res.frames_indexed,
+                        "message":        res.message,
+                        "submitted":      True,
+                        "success":        res.success,
+                        "indexing_time_sec": res.indexing_time_sec,
+                    }
+                push_log("IN", "/semantic_retrieval/trigger_indexing",
+                         f"done success={res.success} frames={res.frames_indexed}")
+            except Exception as e:
+                with state_lock:
+                    state["indexing"]["in_progress"] = False
+                    state["indexing"]["message"]     = f"error: {e}"
+                push_log("SYS", "trigger_indexing", f"call failed: {e}")
+
+        future.add_done_callback(done)
+
+    _enqueue_task(task)
+    push_log("OUT", "/semantic_retrieval/trigger_indexing",
+             f"indexing requested: {rosbag_path} → {output_db_path} (force={force_reindex})")
+    return {"submitted": True, "queued": True}
+
+
+def _get_hd_frame(frame_index: int, timeout: float = 5.0):
+    """Blocking (in a threadpool) GetHdFrame call, marshalled to the executor."""
+    if not (ROS_AVAILABLE and SEMANTIC_AVAILABLE and _node is not None
+            and _node.get_hd_frame_client is not None):
+        return {"error": "GetHdFrame service not available"}
+
+    holder: Dict[str, Any] = {}
+    ev = threading.Event()
+
+    def task(node):
+        client = node.get_hd_frame_client
+        if not client.service_is_ready():
+            holder["error"] = "service unavailable"
+            ev.set()
+            return
+        req = GetHdFrame.Request()
+        req.frame_index = int(frame_index)
+        future = client.call_async(req)
+
+        def done(fut):
+            try:
+                holder["result"] = fut.result()
+            except Exception as e:
+                holder["error"] = str(e)
+            ev.set()
+
+        future.add_done_callback(done)
+
+    _enqueue_task(task)
+    if not ev.wait(timeout):
+        return {"error": "timeout waiting for GetHdFrame"}
+    return holder
+
+
+def _publish_seed(ros_img):
+    """Thread-safe seed publish: marshal onto the executor thread."""
+    _enqueue_task(lambda node: node.seed_pub.publish(ros_img))
+
 
 # ── ROS2 spin thread ─────────────────────────────────────────────────────────
 def ros_thread():
+    global _node
     if not ROS_AVAILABLE:
-        t = 0
-        while True:
-            t += 0.05
-            alt_mock = abs(math.sin(t*0.3))*10
-            with state_lock:
-                state["connected"]   = True
-                state["fcuConnected"]= True
-                state["armed"]       = True
-                state["mode"]        = "OFFBOARD"
-                state["landedState"] = "IN_AIR" if alt_mock > 0.3 else "ON_GROUND"
-                state["position"]    = {"x": math.sin(t)*5, "y": math.cos(t)*5, "z": alt_mock}
-                state["orientation"] = {"roll": math.sin(t*0.7)*15, "pitch": math.cos(t*0.5)*10, "yaw": (t*20)%360}
-                state["velocity"]    = {"horizontal": abs(math.sin(t))*8, "climbRate": math.cos(t*0.4)*2}
-                state["battery"]     = {"percentage": max(0, 80-t*0.1), "voltage": max(10, 14.8-t*0.01)}
-                state["altitude"]    = alt_mock
-            time.sleep(0.05)
+        _run_mock()
         return
 
     rclpy.init()
     node = DroneNode()
+    _node = node
     try:
         rclpy.spin(node)
     except Exception as e:
         print(f"[ROS2] Error: {e}")
+        push_log("SYS", "node", f"ROS2 error: {e}")
     finally:
         node.destroy_node()
         rclpy.shutdown()
         with state_lock:
             state["connected"] = False
+
+
+def _run_mock():
+    """Mock data loop when ROS2 is not available — keeps the whole GUI demoable."""
+    push_log("SYS", "mock", "Running in MOCK mode — no ROS2")
+    t = 0.0
+    seeded = False
+    while True:
+        t += 0.05
+        alt_mock = abs(math.sin(t * 0.3)) * 10
+        with state_lock:
+            state["connected"]   = True
+            state["fcuConnected"]= True
+            state["armed"]       = True
+            state["mode"]        = "OFFBOARD"
+            state["landedState"] = "IN_AIR" if alt_mock > 0.3 else "ON_GROUND"
+            state["position"]    = {"x": math.sin(t)*5, "y": math.cos(t)*5, "z": alt_mock}
+            state["orientation"] = {"roll": math.sin(t*0.7)*15, "pitch": math.cos(t*0.5)*10, "yaw": (t*20)%360}
+            state["velocity"]    = {"horizontal": abs(math.sin(t))*8, "climbRate": math.cos(t*0.4)*2}
+            state["battery"]     = {"percentage": max(0, 80-t*0.1), "voltage": max(10, 14.8-t*0.01)}
+            state["altitude"]    = alt_mock
+
+            # VSLAM
+            state["vslam_status"] = "TRACKING"
+            state["vslam_pose"]   = {"x": math.sin(t)*5, "y": math.cos(t)*5, "z": 8.0}
+            trail = state["vslam_path"]
+            trail.append({"x": math.sin(t)*5, "y": math.cos(t)*5})
+            if len(trail) > 200:
+                del trail[:-200]
+
+            # Semantic
+            state["semantic_status"] = "RETRIEVAL ACTIVE — 1 seed loaded"
+            state["dock_status"]     = "IN_AIR"
+            if "seed_mock" not in state["semantic_results"]:
+                state["semantic_results"]["seed_mock"] = {
+                    "seed_name":            "seed_mock",
+                    "has_match":            True,
+                    "match_count":          3,
+                    "frame_indices":        [1200, 1215, 1230],
+                    "timestamps_sec":       [40.0, 40.5, 41.0],
+                    "similarity_scores":    [0.82, 0.79, 0.76],
+                    "similarity_threshold": 0.75,
+                    "poses": [
+                        {"valid": True, "x": 4.1, "y": 3.2, "z": 8.5},
+                        {"valid": True, "x": 4.3, "y": 3.4, "z": 8.4},
+                        {"valid": True, "x": 4.5, "y": 3.6, "z": 8.3},
+                    ],
+                    "updated_at": time.time(),
+                }
+                if "seed_mock" not in state["seeds"]:
+                    state["seeds"].append("seed_mock")
+
+        if not seeded:
+            seeded = True
+            push_log("SYS", "mock", "VSLAM TRACKING + 1 mock seed with 3 matches loaded")
+            push_log("IN", "/semantic_retrieval/results",
+                     "seed=seed_mock has_match=True matches=3 best=0.820")
+        time.sleep(0.05)
 
 
 # ── FastAPI app ──────────────────────────────────────────────────────────────
@@ -219,6 +578,7 @@ async def lifespan(app: FastAPI):
     # Start the ROS2 (or mock) bridge thread on startup
     t = threading.Thread(target=ros_thread, daemon=True)
     t.start()
+    push_log("SYS", "boot", "GCS backend starting")
     print("[FastAPI] Bridge thread started — docs at http://localhost:5000/docs")
     yield
     # (daemon thread exits with the process; nothing to clean up explicitly)
@@ -226,29 +586,31 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="ANVESHAN GCS Backend",
-    description="Ground-control bridge: ROS2 telemetry + detections + video proxy for the ASCEND drone.",
-    version="2.0.0",
+    description="Ground-control bridge: ROS2 telemetry + semantic retrieval + VSLAM + video proxy.",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,  # no cookies/credentials; keeps wildcard origin valid
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-# ── REST endpoints (unchanged contract — existing frontend keeps working) ─────
+# ── REST endpoints ───────────────────────────────────────────────────────────
 @app.get("/api/telemetry", response_model=Telemetry)
 def telemetry():
     return telemetry_snapshot()
 
 
-@app.get("/api/detections", response_model=List[Dict[str, Any]])
+@app.get("/api/detections")
 def detections():
-    return detections_snapshot()
+    """Repointed: /seed_detections was a seed INPUT, not output. Returns semantic results."""
+    with state_lock:
+        return dict(state["semantic_results"])
 
 
 @app.get("/api/status", response_model=Status)
@@ -257,16 +619,115 @@ def status():
         return {"connected": state["connected"]}
 
 
-# ── WebSocket: push telemetry + detections (no polling needed) ────────────────
+# ── Semantic retrieval ───────────────────────────────────────────────────────
+@app.get("/api/semantic_results")
+def semantic_results():
+    """seed_name → {has_match, match_count, frame_indices, timestamps_sec,
+    similarity_scores, similarity_threshold, poses:[{valid,x,y,z}...]}."""
+    with state_lock:
+        return dict(state["semantic_results"])
+
+
+@app.get("/api/semantic_status")
+def semantic_status():
+    with state_lock:
+        return {
+            "status": state["semantic_status"],
+            "seeds":  list(state["seeds"]),
+        }
+
+
+@app.post("/api/add_seed")
+def add_seed(file: UploadFile = File(...), seed_name: str = Form(...)):
+    """Upload an image → publish to /semantic_retrieval/add_seed (frame_id = seed name)."""
+    raw = file.file.read()
+    if not raw:
+        return Response(content=json.dumps({"error": "empty file"}),
+                        media_type="application/json", status_code=400)
+    if len(raw) > 25 * 1024 * 1024:   # cap — seed references are small images
+        return Response(content=json.dumps({"error": "file too large (max 25 MB)"}),
+                        media_type="application/json", status_code=413)
+
+    if ROS_AVAILABLE:
+        np_arr = np.frombuffer(raw, np.uint8)
+        cv_img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        if cv_img is None:
+            return Response(content=json.dumps({"error": "could not decode image"}),
+                            media_type="application/json", status_code=400)
+        if _node is None:
+            return Response(content=json.dumps({"error": "ROS node not ready"}),
+                            media_type="application/json", status_code=503)
+        ros_img = _node.bridge.cv2_to_imgmsg(cv_img, encoding="bgr8")
+        ros_img.header.frame_id = seed_name
+        _publish_seed(ros_img)            # thread-safe (marshalled to executor)
+        h, w = cv_img.shape[0], cv_img.shape[1]
+        with state_lock:
+            if seed_name not in state["seeds"]:
+                state["seeds"].append(seed_name)
+        push_log("OUT", "/semantic_retrieval/add_seed",
+                 f"Published seed: {seed_name} ({w}x{h})",
+                 {"seed_name": seed_name, "width": w, "height": h})
+        return {"success": True, "seed_name": seed_name, "message": "seed published to ROS2"}
+
+    # Mock: store the seed so the GUI shows it.
+    with state_lock:
+        if seed_name not in state["seeds"]:
+            state["seeds"].append(seed_name)
+        state["semantic_results"].setdefault(seed_name, {
+            "seed_name":            seed_name,
+            "has_match":            False,
+            "match_count":          0,
+            "frame_indices":        [],
+            "timestamps_sec":       [],
+            "similarity_scores":    [],
+            "similarity_threshold": 0.75,
+            "poses":                [],
+            "updated_at":           time.time(),
+        })
+    push_log("OUT", "/semantic_retrieval/add_seed", f"(mock) stored seed {seed_name}")
+    return {"success": True, "seed_name": seed_name, "message": "seed stored (mock mode)"}
+
+
+@app.post("/api/trigger_indexing")
+def trigger_indexing(req: TriggerIndexingRequest):
+    """Kick off rosbag indexing (async). Returns submitted/queued immediately."""
+    result = _trigger_indexing(req.rosbag_path, req.output_db_path, req.force_reindex)
+    return result
+
+
+@app.get("/api/frame/{frame_index}")
+def get_frame(frame_index: int):
+    """Fetch an HD frame via GetHdFrame. CompressedImage.data is raw JPEG → base64 it."""
+    holder = _get_hd_frame(frame_index)
+    if "error" in holder:
+        return Response(content=json.dumps({"error": holder["error"], "frame_index": frame_index}),
+                        media_type="application/json", status_code=503)
+    res = holder.get("result")
+    if res is None or not getattr(res, "success", False):
+        msg = getattr(res, "message", "frame not available") if res is not None else "no result"
+        return Response(content=json.dumps({"error": msg, "frame_index": frame_index}),
+                        media_type="application/json", status_code=404)
+    # CompressedImage.data is already JPEG bytes — just base64, no cv_bridge needed.
+    b64 = base64.b64encode(bytes(res.image.data)).decode("utf-8")
+    return {"frame": "data:image/jpeg;base64," + b64, "frame_index": frame_index}
+
+
+@app.get("/api/logs")
+def logs(n: int = 100):
+    """Last N entries of the IN/OUT/SYS ring buffer."""
+    n = max(1, min(n, MAX_LOGS))
+    with log_lock:
+        entries = list(log_buffer)
+    return {"logs": entries[-n:], "total": len(entries)}
+
+
+# ── WebSocket: push telemetry + semantic + VSLAM (no polling needed) ─────────
 @app.websocket("/ws")
 async def ws(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:
-            await websocket.send_json({
-                "telemetry":  telemetry_snapshot(),
-                "detections": detections_snapshot(),
-            })
+            await websocket.send_json(full_snapshot())
             await asyncio.sleep(1.0 / WS_PUSH_HZ)
     except WebSocketDisconnect:
         pass

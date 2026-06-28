@@ -1,0 +1,43 @@
+# =============================================================
+# semantic_retrieval — master config
+# Applies to ALL nodes via the /**: namespace wildcard (each node reads the
+# params it declares). The previous top key "semantic_retrieval:" silently
+# matched no node and was ignored — do NOT revert it.
+# =============================================================
+/**:
+  ros__parameters:
+
+    # ---- MODEL ----
+    model_name: "facebook/dinov2-small"
+    target_size: [128, 128]
+    use_fp16: true
+
+    # ---- ROSBAG / TOPICS (confirmed) ----
+    camera_topic: "/camera/camera/color/image_raw"
+    compressed_camera_topic: "/camera/camera/color/image_raw/compressed"
+    odometry_topic: "/visual_slam/tracking/odometry"
+    mavros_pose_topic: "/mavros/local_position/pose"
+
+    # ALL frames. Mission flow wants maximum coverage; slow indexing is fine.
+    sample_rate: 1
+
+    embedding_db_path: "/home/user/semantic_db/video_embeddings.pt"
+
+    # Rosbag storage. Auto-detected from the bag's metadata.yaml at runtime;
+    # this is only the fallback if detection fails.
+    rosbag_storage_id: "sqlite3"
+
+    # ---- SEEDS ----
+    seeds_dir: "/home/user/seeds/"
+    runtime_seed_topic: "/semantic_retrieval/add_seed"
+
+    # ---- RETRIEVAL ----
+    top_k: 5
+    similarity_threshold: 0.75
+    retrieval_interval_sec: 2.0
+
+    # ---- TOPICS / SERVICES ----
+    results_topic: "/semantic_retrieval/results"
+    status_topic: "/semantic_retrieval/status"
+    trigger_service: "/semantic_retrieval/trigger_indexing"
+    get_hd_frame_service: "/semantic_retrieval/get_hd_frame"

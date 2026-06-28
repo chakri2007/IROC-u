@@ -1,0 +1,10 @@
+# On-demand HD frame fetch — keeps the results topic light for a ground laptop.
+# The GUI gets frame_index from /semantic_retrieval/results, then asks the
+# server (which has the rosbag on the Jetson) for that frame as compressed JPEG.
+
+int32 frame_index            # frame index in the rosbag camera stream
+---
+bool success
+sensor_msgs/CompressedImage image   # JPEG; empty if success is false
+int32 frame_index
+string message

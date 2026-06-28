@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# colcon build artifacts (when this is built inside a workspace)
+build/
+install/
+log/
+
+# runtime data — never commit bags, embedding DBs, or seed images
+*.pt
+*.db3
+*.mcap
+semantic_db/
+seeds/
+outputs/

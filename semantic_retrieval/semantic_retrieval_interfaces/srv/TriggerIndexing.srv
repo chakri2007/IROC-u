@@ -1,0 +1,13 @@
+# Service: /semantic_retrieval/trigger_indexing
+# Called by mission manager after drone docks
+
+# REQUEST
+string rosbag_path          # absolute path to the .db3 rosbag file
+string output_db_path       # where to save the embedding DB (.pt file)
+bool   force_reindex        # if true, re-embed even if DB file already exists
+---
+# RESPONSE
+bool   success
+string message              # human-readable status or error
+int32  frames_indexed       # how many frames were embedded
+float64 indexing_time_sec
