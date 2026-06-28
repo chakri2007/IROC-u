@@ -1,3 +1,7 @@
-pip3 install opencv-python-headless
+# GUI backend (FastAPI). Install with:  pip install -r requirements.txt
+fastapi
+uvicorn[standard]
 
-pip install flask flask-cors
+# ROS 2 deps (rclpy, nav_msgs, sensor_msgs, std_msgs, mavros_msgs) come from the
+# sourced ROS 2 environment, NOT pip. The backend falls back to mock data if
+# rclpy is unavailable, so it can be run/tested off-robot too.
