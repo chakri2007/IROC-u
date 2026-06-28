@@ -1,0 +1,6 @@
+# GUI-local ignores (scoped to iroc_gui/)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.DS_Store

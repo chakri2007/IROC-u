@@ -1,0 +1,1181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TEAM ANVESHAN</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Reset & base ─────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --charcoal:        #1A1A1A;
+      --carbon:          #242424;
+      --carbon-40:       rgba(36,36,36,0.4);
+      --carbon-60:       rgba(36,36,36,0.6);
+      --carbon-80:       rgba(36,36,36,0.8);
+      --carbon-90:       rgba(36,36,36,0.9);
+      --tactical-orange: #FF8C42;
+      --cyber-teal:      #00C4B4;
+      --muted-slate:     #A0A0A0;
+      --border-military: #3D3D3D;
+      --white-5:  rgba(255,255,255,0.05);
+      --white-10: rgba(255,255,255,0.10);
+      --white-20: rgba(255,255,255,0.20);
+      --white-40: rgba(255,255,255,0.40);
+      --white-60: rgba(255,255,255,0.60);
+      --radius:   12px;
+    }
+
+    html, body { height: 100%; width: 100%; background: var(--charcoal); }
+
+    body {
+      font-family: 'Rajdhani', sans-serif;
+      color: #fff;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Utility ──────────────────────────────────────────────────────────── */
+    .mono   { font-family: 'Share Tech Mono', monospace; }
+    .hidden { display: none !important; }
+
+    @keyframes pulse  { 0%,100%{opacity:1} 50%{opacity:.4} }
+    @keyframes spin   { to{transform:rotate(360deg)} }
+    @keyframes fadein { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+    .pulse { animation: pulse 2s ease-in-out infinite; }
+    .spin  { animation: spin  1.2s linear infinite; }
+    .fadein{ animation: fadein 0.3s ease forwards; }
+
+    /* ── Tag chip ─────────────────────────────────────────────────────────── */
+    .tag {
+      padding: 2px 8px;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border-military);
+      border-radius: 2px;
+      font-size: 9px;
+      font-family: 'Share Tech Mono', monospace;
+      white-space: nowrap;
+    }
+
+    /* ── NAV ──────────────────────────────────────────────────────────────── */
+    #nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 40px;
+      background: var(--carbon-80);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-military);
+      padding: 0 24px;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 10;
+    }
+
+    #nav .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #nav .brand-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--tactical-orange);
+    }
+    #nav .brand-name {
+      font-weight: 700;
+      font-size: 11px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+    #nav .meta {
+      display: flex;
+      gap: 24px;
+      align-items: center;
+      font-size: 10px;
+      font-family: 'Share Tech Mono', monospace;
+      color: var(--muted-slate);
+    }
+    #nav .meta span.val { color: #fff; }
+    #nav .meta .sep { border-left: 1px solid var(--border-military); padding-left: 24px; }
+
+    #nav .tabs {
+      display: flex;
+      gap: 4px;
+      background: var(--charcoal);
+      padding: 4px;
+      border-radius: 2px;
+      border: 1px solid var(--border-military);
+    }
+    #nav .tab-btn {
+      padding: 0 16px;
+      height: 24px;
+      border: none;
+      background: transparent;
+      color: var(--muted-slate);
+      font-family: 'Rajdhani', sans-serif;
+      font-weight: 700;
+      font-size: 9px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      cursor: pointer;
+      border-radius: 2px;
+      transition: background 0.15s, color 0.15s;
+    }
+    #nav .tab-btn.active {
+      background: var(--tactical-orange);
+      color: var(--charcoal);
+    }
+    #nav .tab-btn:not(.active):hover { color: #fff; }
+
+    /* ── MAIN ─────────────────────────────────────────────────────────────── */
+    #main { flex: 1; min-height: 0; background: var(--charcoal); position: relative; }
+
+    .page { width: 100%; height: 100%; display: none; }
+    .page.active { display: flex; flex-direction: column; }
+
+    /* ── DASHBOARD PAGE ───────────────────────────────────────────────────── */
+    #page-dashboard {
+      padding: 16px;
+      gap: 16px;
+      overflow: hidden;
+    }
+
+    .dash-row { display: flex; gap: 16px; flex: 1; min-height: 0; }
+
+    /* Video panel */
+    .video-panel {
+      flex: 3;
+      position: relative;
+      background: #000;
+      border-radius: var(--radius);
+      border: 1px solid var(--border-military);
+      overflow: hidden;
+    }
+    .video-panel img#fpv {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+
+    /* Crosshair */
+    .crosshair {
+      position: absolute; inset: 0;
+      pointer-events: none;
+      z-index: 10;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .ch-ring {
+      width: 64px; height: 64px;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      position: relative;
+    }
+    .ch-line {
+      position: absolute;
+      background: rgba(255,255,255,0.6);
+    }
+    .ch-h { width: 4px; height: 1px; }
+    .ch-v { width: 1px; height: 4px; }
+    .ch-h.left  { left: -4px; }
+    .ch-h.right { right: -4px; }
+    .ch-v.top   { top: -4px; }
+    .ch-v.bottom{ bottom: -4px; }
+    .ch-hline { position: absolute; width: 200%; height: 1px; background: rgba(255,255,255,0.03); }
+    .ch-vline { position: absolute; height: 200%; width: 1px; background: rgba(255,255,255,0.03); }
+
+    /* Video tags */
+    .video-tags-left  { position: absolute; top: 16px; left: 16px;  z-index: 20; display: flex; gap: 8px; }
+    .video-tags-right { position: absolute; top: 16px; right: 16px; z-index: 20; display: flex; gap: 8px; }
+
+    .tag.green  { color: #22c55e; }
+    .tag.red    { color: #ef4444; }
+    .tag.yellow { color: #eab308; }
+    .tag.teal   { color: var(--cyber-teal); }
+    .tag.white  { color: #fff; }
+    .tag.orange { color: var(--tactical-orange); }
+    .tag.slate  { color: var(--muted-slate); }
+
+    /* Mini map */
+    .mini-map {
+      position: absolute; bottom: 16px; left: 16px;
+      width: 128px; height: 128px;
+      background: rgba(12,22,36,0.8);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-military);
+      border-radius: 8px;
+      overflow: hidden;
+      z-index: 20;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+    }
+    .mini-map svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .mini-map-label {
+      position: absolute; top: 4px; left: 4px;
+      font-size: 7px; color: rgba(255,255,255,0.4);
+      font-family: 'Share Tech Mono', monospace;
+      text-transform: uppercase;
+    }
+
+    /* Right sidebar */
+    .sidebar {
+      flex: 1;
+      min-width: 280px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Attitude widget */
+    .attitude-card {
+      background: var(--carbon-40);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-military);
+      border-radius: var(--radius);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      min-height: 160px;
+    }
+    .card-label {
+      position: absolute; top: 12px; left: 16px;
+      font-size: 9px; font-weight: 700;
+      color: var(--muted-slate);
+      text-transform: uppercase;
+      letter-spacing: 3px;
+    }
+    .horizon-ring {
+      width: 96px; height: 96px;
+      border: 2px dashed var(--border-military);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #roll-bar {
+      width: 64px; height: 8px;
+      background: var(--tactical-orange);
+      border-radius: 9999px;
+      box-shadow: 0 0 15px #FF8C42;
+      transition: transform 0.1s ease;
+    }
+    .attitude-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      font-size: 10px;
+      font-family: 'Share Tech Mono', monospace;
+      width: 100%; padding: 0 8px; margin-top: 16px;
+    }
+    .attitude-grid > div { display: flex; flex-direction: column; align-items: center; }
+    .attitude-grid .lbl { color: var(--muted-slate); text-transform: uppercase; }
+
+    /* Battery */
+    .battery-card {
+      background: var(--carbon);
+      border: 1px solid var(--border-military);
+      border-radius: var(--radius);
+      padding: 16px;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .battery-header { display: flex; justify-content: space-between; align-items: flex-end; }
+    .battery-header .lbl { font-size: 9px; font-weight: 700; color: var(--muted-slate); text-transform: uppercase; letter-spacing: 3px; }
+    .battery-header .spec { font-size: 12px; font-family: 'Share Tech Mono', monospace; }
+    .battery-bars { display: flex; gap: 4px; height: 12px; margin-top: 4px; }
+    .battery-bar { flex: 1; border-radius: 1px; background: var(--white-10); transition: background 0.3s; }
+    .battery-bar.filled { background: var(--cyber-teal); }
+    .battery-footer { display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-family: 'Share Tech Mono', monospace; margin-top: 4px; }
+    .battery-footer .lbl { color: var(--muted-slate); text-transform: uppercase; }
+    .battery-footer .val { color: var(--cyber-teal); font-weight: 700; }
+
+    /* Sliders card */
+    .sliders-card {
+      background: var(--carbon-40);
+      border: 1px solid var(--border-military);
+      border-radius: var(--radius);
+      padding: 16px;
+      flex: 1;
+      display: flex; flex-direction: column; gap: 16px;
+    }
+    .vsliders { display: flex; gap: 24px; justify-content: center; flex: 1; }
+    .vslider-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+    .vslider-lbl { font-size: 8px; font-weight: 700; color: var(--muted-slate); text-transform: uppercase; }
+    .vslider-track {
+      width: 8px; flex: 1;
+      background: var(--charcoal);
+      border-radius: 9999px;
+      border: 1px solid var(--border-military);
+      position: relative; overflow: hidden;
+    }
+    .vslider-fill {
+      position: absolute; bottom: 0; width: 100%;
+      transition: height 0.3s ease;
+    }
+    .vslider-fill.orange { background: var(--tactical-orange); }
+    .vslider-fill.white  { background: var(--white-40); }
+    .vslider-val { font-size: 10px; font-family: 'Share Tech Mono', monospace; }
+
+    .launch-btn {
+      width: 100%; padding: 10px;
+      background: var(--tactical-orange);
+      color: var(--charcoal);
+      border: none; cursor: pointer;
+      border-radius: 4px;
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 2px;
+      transition: filter 0.15s;
+    }
+    .launch-btn:hover { filter: brightness(1.1); }
+
+    /* Bottom grid */
+    .bottom-grid {
+      height: 96px; flex-shrink: 0;
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+    }
+    .stat-card {
+      background: var(--carbon-60);
+      border: 1px solid var(--border-military);
+      border-radius: var(--radius);
+      padding: 16px;
+      display: flex; align-items: center; justify-content: space-between;
+      transition: border-color 0.15s;
+    }
+    .stat-card:hover { border-color: rgba(255,140,66,0.5); }
+    .stat-card:hover .stat-icon { color: var(--tactical-orange); }
+    .stat-info { display: flex; flex-direction: column; }
+    .stat-label { font-size: 9px; font-weight: 700; color: var(--muted-slate); text-transform: uppercase; letter-spacing: 3px; }
+    .stat-value { font-size: 18px; font-family: 'Share Tech Mono', monospace; margin-top: 4px; }
+    .stat-icon {
+      width: 40px; height: 40px;
+      border: 1px solid var(--border-military);
+      border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-family: 'Share Tech Mono', monospace;
+      color: var(--white-40); transition: color 0.15s;
+    }
+
+    /* Compass */
+    #compass {
+      position: fixed; bottom: 128px; right: 32px;
+      width: 96px; height: 96px;
+      background: var(--carbon-90);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-military);
+      border-radius: 50%;
+      z-index: 30;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+    }
+    #compass .outer-ring {
+      position: absolute; inset: 0;
+      border: 4px solid rgba(255,140,66,0.2);
+      border-radius: 50%;
+    }
+    #compass .inner-ring {
+      position: absolute; inset: 8px;
+      border: 1px solid rgba(255,140,66,0.4);
+      border-radius: 50%;
+    }
+    #compass .needle {
+      position: absolute; top: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 8px; height: 16px;
+      background: var(--tactical-orange);
+      border-radius: 9999px;
+      box-shadow: 0 0 10px #FF8C42;
+    }
+    #compass .yaw-val {
+      font-size: 10px; font-family: 'Share Tech Mono', monospace;
+      font-weight: 700; z-index: 10;
+    }
+    #compass .hline { position: absolute; width: 100%; height: 1px; background: var(--white-5); }
+    #compass .vline { position: absolute; height: 100%; width: 1px; background: var(--white-5); }
+
+    /* ── ANALYSIS PAGE ────────────────────────────────────────────────────── */
+    #page-analysis {
+      padding: 16px;
+      overflow: hidden;
+    }
+
+    .analysis-header {
+      display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1px solid var(--border-military);
+      padding-bottom: 8px; margin-bottom: 16px; flex-shrink: 0;
+    }
+    .analysis-title {
+      font-size: 20px; font-weight: 700;
+      letter-spacing: 4px; text-transform: uppercase; font-family: 'Rajdhani', sans-serif;
+    }
+    .analysis-actions { display: flex; gap: 8px; align-items: center; }
+
+    .btn-upload {
+      padding: 4px 12px;
+      background: rgba(255,140,66,0.2);
+      border: 1px solid rgba(255,140,66,0.4);
+      border-radius: 2px;
+      font-size: 10px; color: var(--tactical-orange);
+      font-weight: 700; text-transform: uppercase; letter-spacing: 2px;
+      cursor: pointer; transition: background 0.15s, color 0.15s;
+      font-family: 'Rajdhani', sans-serif;
+    }
+    .btn-upload:hover { background: var(--tactical-orange); color: var(--charcoal); }
+
+    .btn-download {
+      padding: 4px 12px;
+      background: rgba(0,196,180,0.2);
+      border: 1px solid rgba(0,196,180,0.4);
+      border-radius: 2px;
+      font-size: 10px; color: var(--cyber-teal);
+      font-weight: 700; text-transform: uppercase; letter-spacing: 2px;
+      cursor: pointer; transition: background 0.15s, color 0.15s;
+      font-family: 'Rajdhani', sans-serif;
+    }
+    .btn-download:hover { background: var(--cyber-teal); color: var(--charcoal); }
+
+    .session-tag {
+      padding: 2px 8px;
+      background: var(--carbon);
+      border: 1px solid var(--border-military);
+      border-radius: 2px; font-size: 10px;
+      font-family: 'Share Tech Mono', monospace;
+      color: var(--cyber-teal);
+    }
+    .session-tag span { color: #fff; margin-left: 4px; }
+
+    /* Detection cards grid */
+    #detections-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      flex: 1; min-height: 0;
+      overflow-y: auto;
+      padding-bottom: 8px;
+    }
+
+    .det-card {
+      background: rgba(36,36,36,0.5);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-military);
+      border-radius: var(--radius);
+      padding: 16px;
+      display: flex; flex-direction: column;
+      gap: 16px; position: relative;
+      transition: border-color 0.2s;
+    }
+    .det-card:hover { border-color: rgba(255,140,66,0.3); }
+
+    .status-badge {
+      position: absolute; top: 12px; right: 12px;
+      padding: 2px 8px; border-radius: 2px;
+      font-size: 8px; font-weight: 700;
+      letter-spacing: 2px; text-transform: uppercase;
+      z-index: 10; backdrop-filter: blur(8px);
+      border: 1px solid;
+    }
+    .status-badge.verified { background: rgba(0,196,180,0.2); color: var(--cyber-teal); border-color: rgba(0,196,180,0.4); }
+    .status-badge.pending  { background: rgba(255,140,66,0.2); color: var(--tactical-orange); border-color: rgba(255,140,66,0.4); }
+
+    .img-slot {
+      width: 100%; aspect-ratio: 16/9;
+      background: #000;
+      border-radius: 8px;
+      border: 1px solid var(--border-military);
+      position: relative; overflow: hidden;
+      flex-shrink: 0;
+      transition: border-color 0.2s;
+    }
+    .img-slot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .img-slot .slot-label {
+      position: absolute; top: 8px; left: 8px;
+      background: rgba(0,0,0,0.6);
+      font-size: 8px; color: rgba(255,255,255,0.4);
+      padding: 2px 8px; border-radius: 2px; z-index: 20;
+      font-family: 'Share Tech Mono', monospace;
+      font-weight: 700; text-transform: uppercase; letter-spacing: 3px;
+      pointer-events: none; border: 1px solid var(--white-5);
+    }
+    .img-slot .slot-label.scan {
+      background: var(--tactical-orange); color: var(--charcoal);
+      border: none;
+    }
+    .img-slot .empty-label {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      font-size: 10px; color: var(--white-20); font-style: italic;
+      font-family: 'Share Tech Mono', monospace;
+    }
+
+    /* Bounding box HUD */
+    .bbox {
+      position: absolute;
+      top: 25%; left: 25%; width: 50%; height: 50%;
+      border: 2px solid var(--tactical-orange);
+      border-radius: 2px; pointer-events: none; z-index: 10;
+      animation: pulse 1.5s ease-in-out infinite;
+      box-shadow: 0 0 15px rgba(255,140,66,0.5);
+    }
+    .bbox-tl, .bbox-br {
+      position: absolute; width: 16px; height: 16px;
+    }
+    .bbox-tl { top: -2px; left: -2px; border-top: 2px solid #fff; border-left: 2px solid #fff; }
+    .bbox-br { bottom: -2px; right: -2px; border-bottom: 2px solid #fff; border-right: 2px solid #fff; }
+
+    .det-meta {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 16px; font-size: 10px;
+      background: rgba(0,0,0,0.4);
+      padding: 16px; border-radius: 8px;
+      border: 1px solid var(--border-military);
+      transition: background 0.2s;
+    }
+    .det-card:hover .det-meta { background: rgba(0,0,0,0.6); }
+    .meta-item { display: flex; flex-direction: column; gap: 4px; }
+    .meta-item .ml { font-size: 8px; font-weight: 700; color: var(--white-20); text-transform: uppercase; letter-spacing: 3px; }
+    .meta-item .mv { font-family: 'Share Tech Mono', monospace; }
+    .meta-item .mv.teal { color: var(--cyber-teal); font-weight: 700; }
+    .meta-item .mv.dim  { color: var(--white-60); font-size: 11px; }
+    .meta-item.span2 { grid-column: span 2; border-top: 1px solid var(--white-5); padding-top: 8px; }
+
+    .det-actions { display: flex; flex-direction: column; gap: 8px; }
+    .det-actions .btn-ref {
+      display: block; width: 100%; text-align: center;
+      border: 1px solid var(--border-military);
+      color: var(--white-60);
+      padding: 8px; border-radius: 4px;
+      font-size: 9px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 2px;
+      cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
+      font-family: 'Rajdhani', sans-serif;
+      background: transparent;
+    }
+    .det-actions .btn-ref:hover { background: var(--tactical-orange); color: var(--charcoal); border-color: var(--tactical-orange); }
+    .det-actions .btn-dl {
+      display: block; width: 100%; text-align: center;
+      border: 1px solid rgba(0,196,180,0.4);
+      color: var(--cyber-teal);
+      padding: 8px; border-radius: 4px;
+      font-size: 9px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 2px;
+      cursor: pointer; transition: background 0.15s, color 0.15s;
+      font-family: 'Rajdhani', sans-serif;
+      background: transparent;
+    }
+    .det-actions .btn-dl:hover { background: var(--cyber-teal); color: var(--charcoal); }
+
+    /* Empty state */
+    #empty-state {
+      flex: 1; width: 100%;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      border: 2px dashed var(--border-military);
+      border-radius: var(--radius);
+      background: rgba(0,0,0,0.2);
+    }
+    .empty-ring {
+      width: 64px; height: 64px;
+      border: 1px solid var(--white-10);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 16px;
+    }
+    .empty-spinner {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      border-top: 2px solid var(--cyber-teal);
+      opacity: 0.2;
+    }
+    .empty-title {
+      color: var(--white-40); text-transform: uppercase;
+      letter-spacing: 4px; font-size: 12px;
+    }
+    .empty-sub {
+      font-size: 10px; color: var(--muted-slate);
+      margin-top: 8px; font-family: 'Share Tech Mono', monospace;
+    }
+    .empty-btn {
+      margin-top: 32px;
+      padding: 8px 24px;
+      background: var(--tactical-orange); color: var(--charcoal);
+      border: none; border-radius: 4px;
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 2px;
+      cursor: pointer; transition: filter 0.15s;
+      font-family: 'Rajdhani', sans-serif;
+    }
+    .empty-btn:hover { filter: brightness(1.1); }
+    .empty-note { font-size: 9px; color: var(--white-20); font-style: italic; margin-top: 8px; text-align: center; max-width: 200px; }
+    .empty-status { margin-top: 24px; display: flex; gap: 16px; }
+    .status-pill {
+      padding: 4px 12px; border-radius: 2px;
+      font-size: 9px; font-family: 'Share Tech Mono', monospace;
+      border: 1px solid;
+    }
+    .status-pill.online  { border-color: rgba(34,197,94,0.3); color: rgba(34,197,94,0.6); }
+    .status-pill.offline { border-color: rgba(239,68,68,0.3); color: rgba(239,68,68,0.6); }
+    .status-pill.buffer  { border-color: var(--white-5); color: var(--white-20); }
+
+    /* Detection popup toast */
+    #det-popup {
+      position: fixed; bottom: 32px; right: 32px;
+      background: var(--carbon-90);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,140,66,0.5);
+      color: #fff;
+      padding: 16px 24px;
+      border-radius: var(--radius);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+      display: flex; align-items: center; gap: 16px;
+      z-index: 50;
+      transition: opacity 0.3s, transform 0.3s;
+    }
+    #det-popup.hidden { opacity: 0; pointer-events: none; transform: translateY(8px); }
+    #det-popup .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--tactical-orange);
+      box-shadow: 0 0 10px #FF8C42;
+      flex-shrink: 0;
+    }
+    #det-popup .pop-title { font-weight: 700; letter-spacing: 3px; text-transform: uppercase; font-size: 10px; color: var(--tactical-orange); }
+    #det-popup .pop-sub   { font-size: 10px; color: var(--muted-slate); font-family: 'Share Tech Mono', monospace; margin-top: 2px; }
+
+  </style>
+</head>
+<body>
+
+<!-- ── NAV ──────────────────────────────────────────────────────────────── -->
+<nav id="nav">
+  <div class="brand">
+    <div class="brand-dot pulse"></div>
+    <span class="brand-name">ANVESHAN GCS</span>
+
+    <div class="meta" style="margin-left:32px">
+      <span>Coverage: <span class="val">243.4 KM²</span></span>
+      <span class="sep">Weather: <span class="val">RAIN / 24°C</span></span>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('dashboard')">Controller</button>
+    <button class="tab-btn"        onclick="switchTab('analysis')">Analysis</button>
+  </div>
+</nav>
+
+<!-- ── MAIN ─────────────────────────────────────────────────────────────── -->
+<div id="main">
+
+  <!-- DASHBOARD -->
+  <div id="page-dashboard" class="page active">
+
+    <!-- Top row: video + sidebar -->
+    <div class="dash-row">
+
+      <!-- Video panel -->
+      <div class="video-panel">
+        <img id="fpv" src="" alt="Drone FPV Feed" />
+
+        <!-- Crosshair -->
+        <div class="crosshair">
+          <div class="ch-ring">
+            <div class="ch-line ch-h left"></div>
+            <div class="ch-line ch-h right"></div>
+            <div class="ch-line ch-v top"></div>
+            <div class="ch-line ch-v bottom"></div>
+          </div>
+          <div class="ch-hline"></div>
+          <div class="ch-vline"></div>
+        </div>
+
+        <!-- Top-left tags -->
+        <div class="video-tags-left">
+          <div class="tag teal">LIVE // FPV_FEED_01</div>
+          <div id="tag-video" class="tag red">VIDEO: LOST</div>
+          <div id="tag-ros" class="tag red" onclick="forceReconnect()" style="cursor:pointer">ROS: LOST</div>
+        </div>
+
+        <!-- Top-right tags -->
+        <div class="video-tags-right">
+          <div class="tag slate">HDR: <span class="orange" style="color:var(--tactical-orange)">ON</span></div>
+          <div class="tag white">FPS: <span>30</span></div>
+        </div>
+
+        <!-- Mini map -->
+        <div class="mini-map">
+          <svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+            <path d="M 20 100 Q 50 20 110 80" fill="none" stroke="#00C4B4" stroke-width="1" stroke-dasharray="4"/>
+            <circle id="map-dot" cx="110" cy="80" r="3" fill="#3b82f6"/>
+          </svg>
+          <div class="mini-map-label">Satellite</div>
+        </div>
+      </div>
+
+      <!-- Right sidebar -->
+      <div class="sidebar">
+
+        <!-- Attitude -->
+        <div class="attitude-card">
+          <span class="card-label">Attitude</span>
+          <div class="horizon-ring">
+            <div id="roll-bar"></div>
+          </div>
+          <div class="attitude-grid">
+            <div><span class="lbl">Pitch</span><span id="val-pitch" class="mono">0.0°</span></div>
+            <div><span class="lbl">Roll</span> <span id="val-roll"  class="mono">0.0°</span></div>
+            <div><span class="lbl">Yaw</span>  <span id="val-yaw"   class="mono">0.0°</span></div>
+          </div>
+        </div>
+
+        <!-- Battery -->
+        <div class="battery-card">
+          <div class="battery-header">
+            <span class="lbl">Battery Module</span>
+            <span class="spec mono">14.8V // 5200mAh</span>
+          </div>
+          <div class="battery-bars" id="battery-bars">
+            <!-- filled by JS -->
+          </div>
+          <div class="battery-footer">
+            <span class="lbl">Voltage</span>
+            <span id="val-voltage" class="val">0.00V</span>
+          </div>
+        </div>
+
+        <!-- Vertical sliders + launch -->
+        <div class="sliders-card">
+          <div class="vsliders">
+            <div class="vslider-wrap">
+              <span class="vslider-lbl">Alt</span>
+              <div class="vslider-track">
+                <div id="alt-fill" class="vslider-fill orange" style="height:0%"></div>
+              </div>
+              <span id="val-alt" class="vslider-val mono">0.0m</span>
+            </div>
+            <div class="vslider-wrap">
+              <span class="vslider-lbl">Res</span>
+              <div class="vslider-track">
+                <div class="vslider-fill white" style="height:85%"></div>
+              </div>
+              <span class="vslider-val mono">4K</span>
+            </div>
+          </div>
+          <button class="launch-btn">Initiate Launch</button>
+        </div>
+
+      </div><!-- /sidebar -->
+    </div><!-- /dash-row -->
+
+    <!-- Bottom stat grid -->
+    <div class="bottom-grid">
+      <div class="stat-card">
+        <div class="stat-info">
+          <span class="stat-label">Speed</span>
+          <span id="val-speed" class="stat-value">0.0 km/h</span>
+        </div>
+        <div class="stat-icon">SPD</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info">
+          <span class="stat-label">Lens Focus</span>
+          <span class="stat-value">0.85 AF</span>
+        </div>
+        <div class="stat-icon">FOC</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info">
+          <span class="stat-label">Height</span>
+          <span id="val-height" class="stat-value">0.0 M</span>
+        </div>
+        <div class="stat-icon">ALT</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info">
+          <span class="stat-label">Shutter</span>
+          <span class="stat-value">1/2000</span>
+        </div>
+        <div class="stat-icon">SHT</div>
+      </div>
+    </div>
+
+  </div><!-- /page-dashboard -->
+
+  <!-- ANALYSIS -->
+  <div id="page-analysis" class="page">
+
+    <div class="analysis-header">
+      <h2 class="analysis-title">Seed Analysis System</h2>
+      <div class="analysis-actions">
+        <label class="btn-upload">
+          Upload Manual Detection
+          <input type="file" accept="image/*" style="display:none" onchange="handleManualUpload(event)" />
+        </label>
+        <button class="btn-download" onclick="handleDownloadReport()">Download Report &amp; Images</button>
+        <div class="session-tag">SESSION_ID: <span>A-742</span></div>
+      </div>
+    </div>
+
+    <!-- Detections or empty state -->
+    <div id="detections-grid"></div>
+    <div id="empty-state">
+      <div class="empty-ring">
+        <div class="empty-spinner spin"></div>
+      </div>
+      <p class="empty-title">Awaiting Seed Detections…</p>
+      <p class="empty-sub mono">SCANNING TOPIC: /seed_detections</p>
+      <label class="empty-btn">
+        Manually Upload Seed Image
+        <input type="file" accept="image/*" style="display:none" onchange="handleManualUpload(event)" />
+      </label>
+      <p class="empty-note">Use manual upload if ROS bridge is offline or for reference testing</p>
+      <div class="empty-status">
+        <div id="link-pill" class="status-pill offline">LINK: OFFLINE</div>
+        <div class="status-pill buffer">BUFFER: 0_FLUSHED</div>
+      </div>
+    </div>
+
+  </div><!-- /page-analysis -->
+
+</div><!-- /main -->
+
+<!-- Compass (fixed overlay) -->
+<div id="compass">
+  <div class="outer-ring"></div>
+  <div class="inner-ring">
+    <div class="needle" id="compass-needle"></div>
+  </div>
+  <div class="hline"></div>
+  <div class="vline"></div>
+  <span id="val-yaw-compass" class="yaw-val mono">0.0°</span>
+</div>
+
+<!-- Detection popup -->
+<div id="det-popup" class="hidden">
+  <div class="dot pulse"></div>
+  <div>
+    <div class="pop-title">Detection Logged</div>
+    <div id="pop-sub" class="pop-sub"></div>
+  </div>
+</div>
+
+<script>
+// ── Config ───────────────────────────────────────────────────────────────────
+const API_BASE       = 'http://localhost:5000';
+const POLL_INTERVAL  = 500;   // ms – telemetry polling
+const DET_INTERVAL   = 2000;  // ms – detections polling
+
+// ── State ────────────────────────────────────────────────────────────────────
+let detections = [];   // [{id, lat, lon, alt, timestamp, status, detectedImg, referenceImg}]
+let popupTimer  = null;
+let videoOk     = false;
+let rosOk       = false;
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  event.currentTarget.classList.add('active');
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+// Flask proxies the Jetson MJPEG stream at /video_feed
+const VIDEO_URL = API_BASE + '/video_feed';
+
+function boot() {
+  if (VIDEO_URL) {
+    const fpv = document.getElementById('fpv');
+    fpv.src     = VIDEO_URL;
+    fpv.onload  = () => { videoOk = true;  updateVideoTag(); };
+    fpv.onerror = () => { videoOk = false; updateVideoTag(); };
+  }
+  startPolling();
+}
+
+// ── Telemetry polling ─────────────────────────────────────────────────────────
+function startPolling() {
+  pollTelemetry();
+  pollDetections();
+  setInterval(pollTelemetry,  POLL_INTERVAL);
+  setInterval(pollDetections, DET_INTERVAL);
+}
+
+async function pollTelemetry() {
+  try {
+    const r = await fetch(API_BASE + '/api/telemetry');
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    rosOk = d.connected;
+    updateDashboard(d);
+  } catch(e) {
+    rosOk = false;
+  }
+  updateRosTag();
+}
+
+async function pollDetections() {
+  try {
+    const r = await fetch(API_BASE + '/api/detections');
+    if (!r.ok) throw new Error(r.status);
+    const incoming = await r.json();
+
+    // Merge new detections (preserve referenceImg)
+    incoming.forEach(det => {
+      const existing = detections.find(d => d.id === det.id);
+      if (!existing) {
+        detections.unshift({
+          ...det,
+          referenceImg: det.referenceImg || null
+        });
+        // Toast
+        showPopup(det);
+      }
+    });
+    detections = detections.slice(0, 50);
+
+    updateAnalysisPage();
+  } catch(e) {
+    // silent – backend might be offline
+  }
+}
+
+// ── Dashboard DOM updates ─────────────────────────────────────────────────────
+function updateDashboard(d) {
+  const ori = d.orientation || {};
+  const pos = d.position    || {};
+  const vel = d.velocity    || {};
+  const bat = d.battery     || {};
+
+  const roll  = ori.roll  || 0;
+  const pitch = ori.pitch || 0;
+  const yaw   = ori.yaw   || 0;
+  const alt   = pos.z     || 0;
+  const speed = vel.horizontal || 0;
+  const volt  = bat.voltage    || 0;
+  const pct   = bat.percentage || 0;
+
+  // Attitude
+  document.getElementById('val-pitch').textContent = pitch.toFixed(1) + '°';
+  document.getElementById('val-roll').textContent  = roll.toFixed(1)  + '°';
+  document.getElementById('val-yaw').textContent   = yaw.toFixed(1)   + '°';
+  document.getElementById('roll-bar').style.transform = `rotate(${roll}deg)`;
+
+  // Compass
+  document.getElementById('val-yaw-compass').textContent = yaw.toFixed(1) + '°';
+  document.getElementById('compass-needle').style.transform =
+    `translateX(-50%) rotate(${yaw}deg)`;
+
+  // Battery bars
+  const filled = Math.round((pct / 100) * 10);
+  const barsEl = document.getElementById('battery-bars');
+  barsEl.innerHTML = '';
+  for (let i = 0; i < 10; i++) {
+    const b = document.createElement('div');
+    b.className = 'battery-bar' + (i < filled ? ' filled' : '');
+    barsEl.appendChild(b);
+  }
+  document.getElementById('val-voltage').textContent = volt.toFixed(2) + 'V';
+
+  // Altitude slider (cap at 50m for display)
+  const altPct = Math.min((alt / 50) * 100, 100);
+  document.getElementById('alt-fill').style.height = altPct + '%';
+  document.getElementById('val-alt').textContent    = alt.toFixed(1) + 'm';
+
+  // Stats
+  document.getElementById('val-speed').textContent  = speed.toFixed(1) + ' km/h';
+  document.getElementById('val-height').textContent = alt.toFixed(1)   + ' M';
+
+  // Map dot: simple animation based on position
+  const cx = 64 + Math.min(Math.max(pos.x || 0, -40), 40);
+  const cy = 64 - Math.min(Math.max(pos.y || 0, -40), 40);
+  document.getElementById('map-dot').setAttribute('cx', cx);
+  document.getElementById('map-dot').setAttribute('cy', cy);
+}
+
+// ── Tag helpers ───────────────────────────────────────────────────────────────
+function updateVideoTag() {
+  const el = document.getElementById('tag-video');
+  el.textContent  = videoOk ? 'VIDEO: LIVE' : 'VIDEO: LOST';
+  el.className    = 'tag ' + (videoOk ? 'green' : 'red');
+}
+
+function updateRosTag() {
+  const el = document.getElementById('tag-ros');
+  el.textContent = rosOk ? 'ROS: OK' : 'ROS: LOST';
+  el.className   = 'tag ' + (rosOk ? 'green' : 'red');
+
+  // Link pill in analysis page
+  const pill = document.getElementById('link-pill');
+  if (pill) {
+    pill.textContent = 'LINK: ' + (rosOk ? 'ONLINE' : 'OFFLINE');
+    pill.className   = 'status-pill ' + (rosOk ? 'online' : 'offline');
+  }
+}
+
+function forceReconnect() {
+  // Just a visual cue – backend auto-reconnects
+  document.getElementById('tag-ros').textContent = 'ROS: CONNECTING…';
+  document.getElementById('tag-ros').className   = 'tag yellow';
+}
+
+// ── Analysis page rendering ───────────────────────────────────────────────────
+function updateAnalysisPage() {
+  const grid  = document.getElementById('detections-grid');
+  const empty = document.getElementById('empty-state');
+
+  if (detections.length === 0) {
+    grid.style.display  = 'none';
+    empty.style.display = 'flex';
+    return;
+  }
+
+  empty.style.display = 'none';
+  grid.style.display  = 'grid';
+
+  // Re-render cards (keep it simple – clear & rebuild)
+  grid.innerHTML = '';
+  detections.slice(0, 3).forEach(det => {
+    grid.appendChild(buildDetCard(det));
+  });
+}
+
+function buildDetCard(det) {
+  const card = document.createElement('div');
+  card.className = 'det-card fadein';
+
+  const isVerified = det.status === 'Verified';
+  const ts = new Date((det.timestamp || 0) * 1000).toLocaleTimeString();
+
+  card.innerHTML = `
+    <div class="status-badge ${isVerified ? 'verified' : 'pending'}">${det.status || 'Pending'}</div>
+
+    <!-- Reference image -->
+    <div class="img-slot">
+      <span class="slot-label">REF_DATA</span>
+      ${det.referenceImg
+        ? `<img src="${det.referenceImg}" alt="Reference" style="filter:grayscale(1) opacity(.6)" />`
+        : `<div class="empty-label">No Reference Synced</div>`}
+    </div>
+
+    <!-- Detected image -->
+    <div class="img-slot">
+      <span class="slot-label scan">SCAN_MATCH</span>
+      <img src="${det.detectedImg}" alt="Detection" />
+      <div class="bbox"><div class="bbox-tl"></div><div class="bbox-br"></div></div>
+    </div>
+
+    <!-- Metadata -->
+    <div class="det-meta">
+      <div class="meta-item">
+        <span class="ml">Location</span>
+        <span class="mv">${(det.lat||0).toFixed(4)}, ${(det.lon||0).toFixed(4)}</span>
+      </div>
+      <div class="meta-item">
+        <span class="ml">Altitude</span>
+        <span class="mv teal">${(det.alt||0).toFixed(1)} M</span>
+      </div>
+      <div class="meta-item span2">
+        <span class="ml">Timestamp</span>
+        <span class="mv dim">${ts}</span>
+      </div>
+      <div class="meta-item span2">
+        <div class="det-actions">
+          <label class="btn-ref">
+            Upload Reference
+            <input type="file" accept="image/*" style="display:none" onchange="handleRefUpload(event, ${det.id})" />
+          </label>
+          <button class="btn-dl" onclick="downloadDetection(${det.id})">Download</button>
+        </div>
+      </div>
+    </div>
+  `;
+  return card;
+}
+
+// ── Manual upload ─────────────────────────────────────────────────────────────
+function handleManualUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const det = {
+      id:           Date.now(),
+      lat:          0, lon: 0, alt: 0,
+      timestamp:    Date.now() / 1000,
+      status:       'Manual',
+      detectedImg:  e.target.result,
+      referenceImg: null
+    };
+    detections.unshift(det);
+    detections = detections.slice(0, 50);
+    updateAnalysisPage();
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Reference upload ──────────────────────────────────────────────────────────
+function handleRefUpload(event, id) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const det = detections.find(d => d.id === id);
+    if (det) { det.referenceImg = e.target.result; updateAnalysisPage(); }
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Download detection image ──────────────────────────────────────────────────
+function downloadDetection(id) {
+  const det = detections.find(d => d.id === id);
+  if (!det) return;
+  const a = document.createElement('a');
+  a.href = det.detectedImg;
+  a.download = `detected-seed-${id}.jpg`;
+  a.click();
+}
+
+// ── Download full report ──────────────────────────────────────────────────────
+function handleDownloadReport() {
+  const headers = ['ID','Latitude','Longitude','Altitude','Timestamp','Status'];
+  const rows = detections.map(d => [d.id, d.lat, d.lon, d.alt, d.timestamp, d.status]);
+  const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `seed_analysis_report_${new Date().toISOString()}.csv`;
+  a.click();
+
+  // Download images with a small delay
+  detections.forEach((det, i) => {
+    setTimeout(() => {
+      if (!det.detectedImg) return;
+      const a2 = document.createElement('a');
+      a2.href = det.detectedImg;
+      a2.download = `seed_detection_${det.id}.jpg`;
+      a2.click();
+    }, i * 200);
+  });
+}
+
+// ── Detection popup toast ─────────────────────────────────────────────────────
+function showPopup(det) {
+  const popup = document.getElementById('det-popup');
+  const sub   = document.getElementById('pop-sub');
+  sub.textContent = `${(det.lat||0).toFixed(4)}, ${(det.lon||0).toFixed(4)} | ${(det.alt||0).toFixed(1)}m`;
+  popup.classList.remove('hidden');
+  if (popupTimer) clearTimeout(popupTimer);
+  popupTimer = setTimeout(() => popup.classList.add('hidden'), 4000);
+}
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+run backend
+python backend.py
+
+
+run front end
+cd frontend
+python3 -m http.server 8080
+
+
+open chrome :
+
+http://localhost:8080
