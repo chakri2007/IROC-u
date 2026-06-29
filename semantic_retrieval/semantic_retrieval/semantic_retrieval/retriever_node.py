@@ -80,6 +80,10 @@ class RetrieverNode(Node):
         self.declare_parameter("top_k",                  5)
         self.declare_parameter("similarity_threshold",   0.75)
         self.declare_parameter("retrieval_interval_sec", 2.0)
+        # Seed embedding: pyramid-downsample full-res seeds to match the indexed
+        # frame domain. Off by default (assumes the seed is already a 128x128 crop).
+        self.declare_parameter("downsample_seed",        False)
+        self.declare_parameter("target_size",            [128, 128])
 
         self.model_name          = self.get_parameter("model_name").value
         self.use_fp16            = self.get_parameter("use_fp16").value
@@ -88,6 +92,8 @@ class RetrieverNode(Node):
         self.top_k               = self.get_parameter("top_k").value
         self.threshold           = self.get_parameter("similarity_threshold").value
         self.retrieval_interval  = self.get_parameter("retrieval_interval_sec").value
+        self.downsample_seed     = bool(self.get_parameter("downsample_seed").value)
+        self.target_size         = tuple(self.get_parameter("target_size").value)
 
         self.bridge = CvBridge()
 
@@ -148,6 +154,11 @@ class RetrieverNode(Node):
             10
         )
         self.get_logger().info(f"Listening for runtime seeds on: {runtime_seed_topic}")
+
+        # ---- Runtime seed removal (GUI delete → backend → here) ----
+        self.create_subscription(
+            String, "/semantic_retrieval/remove_seed", self._handle_remove_seed, 10
+        )
 
         # ---- Load static seeds from disk ----
         self._load_seeds_from_disk()
@@ -236,7 +247,7 @@ class RetrieverNode(Node):
                 continue
             try:
                 pil_img = Image.open(f).convert("RGB")
-                seed_emb = embed_seed(pil_img)                    # (1, D)
+                seed_emb = embed_seed(pil_img, self.downsample_seed, self.target_size)                    # (1, D)
                 seed_name = f.stem                                 # filename without extension
                 with self._seed_lock:
                     self.seeds[seed_name] = seed_emb
@@ -263,7 +274,7 @@ class RetrieverNode(Node):
         try:
             cv_img = self.bridge.imgmsg_to_cv2(msg, "rgb8")
             pil_img = Image.fromarray(cv_img)
-            seed_emb = embed_seed(pil_img)                        # (1, D)
+            seed_emb = embed_seed(pil_img, self.downsample_seed, self.target_size)  # (1, D)
 
             with self._seed_lock:
                 self.seeds[seed_name] = seed_emb
@@ -275,6 +286,21 @@ class RetrieverNode(Node):
 
         except Exception as e:
             self.get_logger().error(f"Failed to process runtime seed '{seed_name}': {e}")
+
+    def _handle_remove_seed(self, msg: String):
+        """
+        Drop a seed at runtime (GUI delete button → backend → /remove_seed).
+        Removes it from the active set so it stops being matched + published.
+        """
+        name = msg.data.strip()
+        with self._seed_lock:
+            existed = self.seeds.pop(name, None) is not None
+        self._last_published.pop(name, None)
+        if existed:
+            self.get_logger().info(f"Seed removed: {name}")
+            self._publish_status(f"Seed removed: {name}")
+        else:
+            self.get_logger().warn(f"Remove requested for unknown seed: {name}")
 
     # ----------------------------------------------------------
     # RETRIEVAL CYCLE

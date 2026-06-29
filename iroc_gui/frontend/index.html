@@ -740,7 +740,10 @@
 
       <!-- Detections -->
       <div class="panel dets">
-        <header><span class="label">Detections · rel. base</span><span class="unit" id="det-thr">thr —</span></header>
+        <header><span class="label">Detections · rel. base</span>
+          <span class="unit">show&nbsp;≥&nbsp;<input id="disp-thr" type="number" min="0" max="1" step="0.01" value="0.57"
+            oninput="renderAnalysis()" title="Display threshold — filters matches live (does not re-run retrieval)"
+            style="width:3.6em;background:#0f1117;color:inherit;border:1px solid #2a2f3a;border-radius:4px;font-family:var(--font-mono);font-size:var(--t-xs);padding:1px 4px;" /></span></header>
         <div class="body">
           <div id="det-grid"></div>
           <div class="det-empty" id="det-empty">
@@ -1022,17 +1025,17 @@ function ingestSemantic(results, status) {
   semanticResults = results || {};
   if (status != null) document.getElementById('seed-status').textContent = status || 'idle';
 
-  // Toast + threshold tracking for genuinely new matches
+  // Toast only for genuinely new matches that clear the DISPLAY threshold —
+  // otherwise a candidate pool (floor 0.0) would toast every frame.
+  const thr = getDisplayThreshold();
   for (const [seed, r] of Object.entries(semanticResults)) {
     if (r && Number.isFinite(r.similarity_threshold)) lastThreshold = r.similarity_threshold;
-    if (!r || !r.has_match) continue;
+    if (!r) continue;
     (r.frame_indices || []).forEach((fi, i) => {
+      const sc = (r.similarity_scores || [])[i];
+      if (!(sc >= thr)) return;
       const key = seed + '#' + fi;
-      if (!seenMatchKeys.has(key)) {
-        seenMatchKeys.add(key);
-        const sc = (r.similarity_scores || [])[i];
-        showToast(seed, fi, sc);
-      }
+      if (!seenMatchKeys.has(key)) { seenMatchKeys.add(key); showToast(seed, fi, sc); }
     });
   }
   renderAnalysis();
@@ -1061,25 +1064,55 @@ async function ensureFrame(frameIndex, imgEl, skelEl) {
 }
 
 // ── Analysis render ─────────────────────────────────────────────────────────
+// The retriever sends a CANDIDATE POOL (run it with threshold:=0.0 + a big
+// top_k); the GUI then filters live by the display threshold below. Changing the
+// numbox re-filters instantly from cache — no re-run, no re-fetch.
+function getDisplayThreshold() {
+  const el = document.getElementById('disp-thr');
+  const v = el ? parseFloat(el.value) : NaN;
+  return Number.isFinite(v) ? v : 0;
+}
+
+// Frames for one seed whose score clears `thr`, sorted high→low.
+function matchesAbove(r, thr) {
+  if (!r) return [];
+  const fis = r.frame_indices || [], scs = r.similarity_scores || [];
+  const tss = r.timestamps_sec || [], pos = r.poses || [];
+  const out = [];
+  for (let i = 0; i < fis.length; i++) {
+    const sc = scs[i];
+    if (!(sc >= thr)) continue;
+    out.push({ seed: r.seed_name, frame: fis[i], score: sc,
+               ts: tss[i], pose: pos[i] || { valid: false, x: 0, y: 0, z: 0 } });
+  }
+  out.sort((a, b) => (b.score || 0) - (a.score || 0));
+  return out;
+}
+
 function renderAnalysis() {
-  const seeds = Object.values(semanticResults);
   const seedNames = new Set(Object.keys(semanticResults));
   for (const k of manualSeeds.keys()) seedNames.add(k);
+  const thr = getDisplayThreshold();
 
-  // Counts
-  const matched = seeds.filter(r => r && r.has_match).length;
-  const totalMatches = seeds.reduce((a, r) => a + ((r && r.match_count) || 0), 0);
+  // Filter each seed's candidate pool by the live display threshold.
+  const perSeed = {};
+  let matched = 0, totalMatches = 0;
+  for (const name of seedNames) {
+    const arr = matchesAbove(semanticResults[name], thr);
+    perSeed[name] = arr;
+    if (arr.length) matched++;
+    totalMatches += arr.length;
+  }
+
   document.getElementById('cnt-seeds').textContent   = seedNames.size;
   document.getElementById('cnt-matched').textContent = matched;
   document.getElementById('cnt-matches').textContent = totalMatches;
-  document.getElementById('det-thr').textContent =
-    lastThreshold != null ? 'thr ' + lastThreshold.toFixed(2) : 'thr —';
 
-  renderSeedRail(seedNames);
-  renderDetections(seeds);
+  renderSeedRail(seedNames, perSeed);
+  renderDetections(perSeed);
 }
 
-function renderSeedRail(seedNames) {
+function renderSeedRail(seedNames, perSeed) {
   const rail  = document.getElementById('seed-rail');
   const empty = document.getElementById('seeds-empty');
   if (seedNames.size === 0) { empty.style.display = 'flex';
@@ -1088,9 +1121,8 @@ function renderSeedRail(seedNames) {
 
   rail.querySelectorAll('.seed-card').forEach(n => n.remove());
   [...seedNames].sort().forEach(name => {
-    const r = semanticResults[name];
-    const has = r && r.has_match;
-    const cnt = (r && r.match_count) || 0;
+    const cnt = ((perSeed && perSeed[name]) || []).length;
+    const has = cnt > 0;
     const card = document.createElement('div');
     card.className = 'seed-card';
     // Prefer the just-uploaded local preview; otherwise ask the backend for the
@@ -1103,32 +1135,21 @@ function renderSeedRail(seedNames) {
       <img class="thumb" src="${esc(thumbSrc)}" alt="" onerror="${thumbFallback}">
       <div class="meta">
         <span class="nm" title="${esc(name)}">${esc(name)}</span>
-        <span class="st ${has ? 'match' : 'nomatch'}">${has ? cnt + ' match' + (cnt === 1 ? '' : 'es') : 'no match yet'}</span>
-      </div>`;
+        <span class="st ${has ? 'match' : 'nomatch'}">${has ? cnt + ' match' + (cnt === 1 ? '' : 'es') : 'no match'}</span>
+      </div>
+      <button class="seed-del" data-seed="${esc(name)}" onclick="removeSeedUI(this)" title="Remove seed"
+        style="margin-left:auto;background:none;border:none;color:var(--muted,#8a8f98);font-size:1.15rem;line-height:1;cursor:pointer;padding:0 4px;align-self:center;">×</button>`;
     rail.appendChild(card);
   });
 }
 
-function renderDetections(seeds) {
+function renderDetections(perSeed) {
   const grid  = document.getElementById('det-grid');
   const empty = document.getElementById('det-empty');
 
-  // Flatten seed → per-match rows
+  // perSeed already holds the display-threshold-filtered rows per seed.
   const rows = [];
-  for (const r of seeds) {
-    if (!r || !r.has_match) continue;
-    const n = r.match_count || (r.frame_indices || []).length;
-    for (let i = 0; i < n; i++) {
-      rows.push({
-        seed:  r.seed_name,
-        frame: (r.frame_indices || [])[i],
-        score: (r.similarity_scores || [])[i],
-        ts:    (r.timestamps_sec || [])[i],
-        pose:  (r.poses || [])[i] || { valid: false, x: 0, y: 0, z: 0 },
-        thr:   r.similarity_threshold,
-      });
-    }
-  }
+  for (const name in perSeed) for (const row of perSeed[name]) rows.push(row);
   rows.sort((a, b) => (b.score || 0) - (a.score || 0));
 
   if (rows.length === 0) { empty.style.display = 'flex'; grid.innerHTML = ''; return; }
@@ -1190,6 +1211,19 @@ function showToast(seed, frame, score) {
 }
 
 // ── Actions ─────────────────────────────────────────────────────────────────
+async function removeSeedUI(btn) {
+  const name = btn && btn.dataset ? btn.dataset.seed : '';
+  if (!name) return;
+  if (!confirm('Remove seed "' + name + '"?')) return;
+  // Optimistic local removal; the next backend snapshot reconciles authoritatively.
+  delete semanticResults[name];
+  manualSeeds.delete(name);
+  renderAnalysis();
+  try {
+    await fetch(API_BASE + '/api/seed/' + encodeURIComponent(name), { method: 'DELETE' });
+  } catch (e) { /* WS snapshot will reconcile */ }
+}
+
 async function handleAddSeed(ev) {
   const file = ev.target.files[0];
   if (!file) return;
@@ -1236,15 +1270,16 @@ async function handleTriggerIndexing() {
 
 function handleExportReport() {
   const headers = ['seed_name','frame_index','similarity_score','threshold','timestamp_sec','pose_valid','x_rel_base','y_rel_base','z_rel_base'];
+  // Export exactly what the operator validated on-screen: the matches that clear
+  // the current display threshold.
+  const thr = getDisplayThreshold();
   const rows = [];
   for (const r of Object.values(semanticResults)) {
-    if (!r || !r.has_match) continue;
-    const n = r.match_count || (r.frame_indices || []).length;
-    for (let i = 0; i < n; i++) {
-      const p = (r.poses || [])[i] || {};
+    for (const m of matchesAbove(r, thr)) {
+      const p = m.pose || {};
       rows.push([
-        r.seed_name, (r.frame_indices||[])[i], (r.similarity_scores||[])[i], r.similarity_threshold,
-        (r.timestamps_sec||[])[i], p.valid ? 1 : 0,
+        m.seed, m.frame, m.score, thr,
+        m.ts, p.valid ? 1 : 0,
         p.valid ? p.x : '', p.valid ? p.y : '', p.valid ? p.z : '',
       ]);
     }

@@ -80,7 +80,18 @@ def generate_launch_description():
                         'add seeds live over /semantic_retrieval/add_seed).'),
         DeclareLaunchArgument(
             'threshold', default_value='0.57',
-            description='Cosine-similarity match threshold for the retriever.'),
+            description='Retrieval-floor cosine threshold. For LIVE GUI thresholding '
+                        'set 0.0 (+ a big top_k) so the GUI numbox can filter the '
+                        'full candidate pool without re-running retrieval.'),
+        DeclareLaunchArgument(
+            'top_k', default_value='5',
+            description='Max candidate frames per seed the retriever returns. Raise '
+                        '(e.g. 50) with threshold:=0.0 for live GUI thresholding.'),
+        DeclareLaunchArgument(
+            'downsample_seed', default_value='false',
+            description='If true, pyramid-downsample each seed to 128x128 before '
+                        'embedding (for full-res seed photos). false = seed is '
+                        'assumed already a 128x128 downsampled crop.'),
         DeclareLaunchArgument(
             'sample_rate', default_value='1',
             description='Indexer frame sampling (1 = embed every frame).'),
@@ -122,7 +133,9 @@ def generate_launch_description():
              '--params-file', config,
              '-p', ['embedding_db_path:=', LaunchConfiguration('db_path')],
              '-p', ['seeds_dir:=', LaunchConfiguration('seeds_dir')],
-             '-p', ['similarity_threshold:=', LaunchConfiguration('threshold')]],
+             '-p', ['similarity_threshold:=', LaunchConfiguration('threshold')],
+             '-p', ['top_k:=', LaunchConfiguration('top_k')],
+             '-p', ['downsample_seed:=', LaunchConfiguration('downsample_seed')]],
         cwd=iroc_gui_dir, additional_env=ml_env, output='screen',
         name='semantic_retriever')
 

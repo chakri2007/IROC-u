@@ -153,10 +153,23 @@ def embed_frame(frame_bgr: np.ndarray, target_size=(128, 128)) -> torch.Tensor:
 # EMBED ONE SEED  (PIL image → 1 embedding)
 # ============================================================
 
-def embed_seed(pil_image: Image.Image) -> torch.Tensor:
+def embed_seed(pil_image: Image.Image, pyr_downsample: bool = False,
+               target_size=(128, 128)) -> torch.Tensor:
     """
     Returns tensor of shape (1, D).
+
+    pyr_downsample:
+      False (default) — embed the seed as given. Assumes the operator already
+        provides a ~128x128 downsampled crop, matching the indexed-frame domain.
+      True — run the seed through the SAME pyramidal Gaussian downsample the
+        indexer applies to video frames, bringing a full-resolution seed photo
+        into the same low-res/blurry domain before embedding. Use this when seeds
+        are real high-res reference images rather than pre-downsampled crops.
     """
+    if pyr_downsample:
+        bgr = cv2.cvtColor(np.array(pil_image.convert("RGB")), cv2.COLOR_RGB2BGR)
+        small = pyr_gauss_downsample(bgr, target_size)
+        pil_image = Image.fromarray(cv2.cvtColor(small, cv2.COLOR_BGR2RGB))
     emb = get_embeddings([pil_image])
     return emb
 

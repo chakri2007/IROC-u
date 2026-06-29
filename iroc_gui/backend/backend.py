@@ -271,6 +271,7 @@ if ROS_AVAILABLE:
 
             # ── Publisher: runtime seeds (header.frame_id = seed name) ─────
             self.seed_pub = self.create_publisher(RosImage, '/semantic_retrieval/add_seed', 10)
+            self.remove_pub = self.create_publisher(String, '/semantic_retrieval/remove_seed', 10)
 
             # ── GCS command publisher + ack subscriber ─────────────────────
             # RELIABLE so a safety command can't be silently dropped; VOLATILE
@@ -538,6 +539,13 @@ def _get_hd_frame(frame_index: int, timeout: float = 5.0):
 def _publish_seed(ros_img):
     """Thread-safe seed publish: marshal onto the executor thread."""
     _enqueue_task(lambda node: node.seed_pub.publish(ros_img))
+
+
+def _publish_remove_seed(name: str):
+    """Thread-safe seed removal: marshal onto the executor thread."""
+    msg = String()
+    msg.data = name
+    _enqueue_task(lambda node: node.remove_pub.publish(msg))
 
 
 # ── GCS command: server-side precondition gate + marshalled publish ──────────
@@ -827,6 +835,20 @@ def seed_image(seed_name: str):
 
     return Response(content=json.dumps({"error": "no image for seed"}),
                     media_type="application/json", status_code=404)
+
+
+@app.delete("/api/seed/{seed_name}")
+def remove_seed(seed_name: str, _auth: bool = Depends(require_token)):
+    """Remove a seed: tell the retriever to drop it + clear it from GUI state."""
+    if ROS_AVAILABLE:
+        _publish_remove_seed(seed_name)
+    with state_lock:
+        if seed_name in state["seeds"]:
+            state["seeds"].remove(seed_name)
+        state["semantic_results"].pop(seed_name, None)
+        state["seed_images"].pop(seed_name, None)
+    push_log("OUT", "/semantic_retrieval/remove_seed", f"Removed seed: {seed_name}")
+    return {"success": True, "seed_name": seed_name, "message": "seed removed"}
 
 
 @app.post("/api/trigger_indexing")
