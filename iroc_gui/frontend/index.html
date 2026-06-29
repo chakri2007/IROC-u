@@ -1424,8 +1424,22 @@ function flashToken() {
   gateCommands();
 })();
 
+// Seed the display-threshold box from the backend (operator-set via the launch
+// arg / GCS_DISPLAY_THRESHOLD). Runs once on load; live edits override it.
+async function loadConfig() {
+  try {
+    const c = await fetch(API_BASE + '/api/config').then(r => r.json());
+    if (c && Number.isFinite(c.display_threshold)) {
+      const el = document.getElementById('disp-thr');
+      if (el) el.value = c.display_threshold;
+      renderAnalysis();
+    }
+  } catch (_) { /* keep the HTML default */ }
+}
+
 // ── Boot ────────────────────────────────────────────────────────────────────
 bootVideo();
+loadConfig();
 connectWS();
 setInterval(pollFallback, 1000);   // no-op while WS is connected
 </script>

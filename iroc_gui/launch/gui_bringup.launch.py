@@ -79,14 +79,21 @@ def generate_launch_description():
             description='Folder of seed images loaded at startup (the GUI can also '
                         'add seeds live over /semantic_retrieval/add_seed).'),
         DeclareLaunchArgument(
-            'threshold', default_value='0.57',
-            description='Retrieval-floor cosine threshold. For LIVE GUI thresholding '
-                        'set 0.0 (+ a big top_k) so the GUI numbox can filter the '
-                        'full candidate pool without re-running retrieval.'),
+            'threshold', default_value='0.0',
+            description='Retrieval FLOOR — the lower bound of the candidate pool the '
+                        'retriever computes. Default 0.0 = run the whole search; the '
+                        'GUI then thresholds live within the pool. Raise it only to '
+                        'cap how much is published.'),
         DeclareLaunchArgument(
-            'top_k', default_value='5',
-            description='Max candidate frames per seed the retriever returns. Raise '
-                        '(e.g. 50) with threshold:=0.0 for live GUI thresholding.'),
+            'display_threshold', default_value='0.57',
+            description='The DEFAULT threshold the GUI shows on load (the numbox '
+                        'value). Set this from the terminal to fix the operating '
+                        'point for an autonomous run; the operator can still change '
+                        'it live in the GUI for a manual demo.'),
+        DeclareLaunchArgument(
+            'top_k', default_value='50',
+            description='Max candidate frames per seed in the pool (paired with the '
+                        '0.0 floor for live GUI thresholding).'),
         DeclareLaunchArgument(
             'downsample_seed', default_value='false',
             description='If true, pyramid-downsample each seed to 128x128 before '
@@ -159,6 +166,8 @@ def generate_launch_description():
             # when it shares the filesystem (all-on-one-box). Harmless if the path
             # doesn't exist (e.g. backend on a separate laptop).
             'GCS_SEEDS_DIR': LaunchConfiguration('seeds_dir'),
+            # The GUI's default threshold box value (served via /api/config).
+            'GCS_DISPLAY_THRESHOLD': LaunchConfiguration('display_threshold'),
         },
         output='screen', name='gcs_backend')
 
@@ -175,8 +184,10 @@ def generate_launch_description():
         '│ frontend : http://0.0.0.0:', LaunchConfiguration('frontend_port'), '\n',
         '│ rosbag   : ', LaunchConfiguration('rosbag_path'), '\n',
         '│ db       : ', LaunchConfiguration('db_path'), '\n',
-        '│ camera   : ', LaunchConfiguration('camera_topic'),
-        ' | threshold ', LaunchConfiguration('threshold'), '\n',
+        '│ camera   : ', LaunchConfiguration('camera_topic'), '\n',
+        '│ retrieval: floor ', LaunchConfiguration('threshold'),
+        ' | top_k ', LaunchConfiguration('top_k'),
+        ' | GUI default thr ', LaunchConfiguration('display_threshold'), '\n',
         '└───────────────────────────────────────────────────────────',
     ])
 

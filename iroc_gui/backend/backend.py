@@ -851,6 +851,18 @@ def remove_seed(seed_name: str, _auth: bool = Depends(require_token)):
     return {"success": True, "seed_name": seed_name, "message": "seed removed"}
 
 
+@app.get("/api/config")
+def get_config():
+    """Static GUI config sourced from the launch/env. The GUI reads this once on
+    load to seed its threshold box (the operator's terminal-set operating point);
+    it can still be changed live in the GUI afterwards."""
+    try:
+        dt = float(os.environ.get("GCS_DISPLAY_THRESHOLD", "0.57"))
+    except (TypeError, ValueError):
+        dt = 0.57
+    return {"display_threshold": dt}
+
+
 @app.post("/api/trigger_indexing")
 def trigger_indexing(req: TriggerIndexingRequest, _auth: bool = Depends(require_token)):
     """Kick off rosbag indexing (async). Returns submitted/queued immediately."""
