@@ -3,6 +3,7 @@ import base64
 import collections
 import json
 import math
+import os
 import queue
 import threading
 import time
@@ -12,7 +13,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, File, Form, UploadFile
+from fastapi import (FastAPI, WebSocket, WebSocketDisconnect, File, Form,
+                     UploadFile, Depends, Header, HTTPException)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel, Field
@@ -32,6 +34,18 @@ WS_PUSH_HZ = 10.0
 DEFAULT_ROSBAG_PATH   = "/home/jetson/mission_rosbag"
 DEFAULT_OUTPUT_DB_PATH = "/home/jetson/embeddings.pt"
 
+# ── GCS command interface ────────────────────────────────────────────────────
+# Closed vocabulary published on /gcs/command (std_msgs/String). The flight team
+# owns a subscriber that maps each string to a flight action (see HANDOFF.md);
+# we ONLY publish the token — we never interpret it. Nothing outside this set is
+# ever sent. See command_precondition() for the server-side gate.
+COMMAND_VOCAB = ("START", "ABORT", "HOLD", "RTL", "ABORT_DOCK", "RECALL")
+
+# ── Operator auth (GUI↔backend command path only; NOT the docking-station link).
+#    Set GCS_COMMAND_TOKEN in the backend's environment to require the header
+#    `X-GCS-Token` on mutating endpoints. Empty/unset → auth disabled (dev/mock).
+GCS_TOKEN = os.environ.get("GCS_COMMAND_TOKEN", "").strip()
+
 # ── Try importing rclpy (ROS2) ───────────────────────────────────────────────
 try:
     import cv2
@@ -39,7 +53,8 @@ try:
 
     import rclpy
     from rclpy.node import Node
-    from rclpy.qos import qos_profile_sensor_data
+    from rclpy.qos import (qos_profile_sensor_data, QoSProfile,
+                           ReliabilityPolicy, DurabilityPolicy)
     from nav_msgs.msg import Odometry
     from sensor_msgs.msg import BatteryState
     from sensor_msgs.msg import Image as RosImage
@@ -108,6 +123,12 @@ state = {
 
     # --- indexing job state ---
     "indexing": {"in_progress": False, "frames_indexed": 0, "message": "", "submitted": False},
+
+    # --- GCS command interface ---
+    "last_command":     "",        # last command WE published (echo for the UI)
+    "last_command_ts":  0.0,
+    "last_command_ack": "",        # last ack from /gcs/command_ack (team-published)
+    "last_command_ack_ts": 0.0,
 }
 state_lock = threading.Lock()
 
@@ -146,6 +167,10 @@ def full_snapshot() -> Dict[str, Any]:
             "vslam_pose":       dict(state["vslam_pose"]),
             "vslam_path":       list(state["vslam_path"]),
             "dock_status":      state["dock_status"],
+            "last_command":     state["last_command"],
+            "last_command_ts":  state["last_command_ts"],
+            "last_command_ack": state["last_command_ack"],
+            "last_command_ack_ts": state["last_command_ack_ts"],
         }
 
 
@@ -195,6 +220,10 @@ class TriggerIndexingRequest(BaseModel):
     force_reindex: bool = False
 
 
+class CommandRequest(BaseModel):
+    command: str = Field(..., description="One of: " + ", ".join(COMMAND_VOCAB))
+
+
 # ── Quaternion → Euler (degrees) ─────────────────────────────────────────────
 def quaternion_to_euler(x, y, z, w):
     sinr_cosp = 2 * (w * x + y * z)
@@ -241,6 +270,17 @@ if ROS_AVAILABLE:
 
             # ── Publisher: runtime seeds (header.frame_id = seed name) ─────
             self.seed_pub = self.create_publisher(RosImage, '/semantic_retrieval/add_seed', 10)
+
+            # ── GCS command publisher + ack subscriber ─────────────────────
+            # RELIABLE so a safety command can't be silently dropped; VOLATILE
+            # (NOT latched) so a node restart never re-fires the last command.
+            cmd_qos = QoSProfile(depth=10,
+                                 reliability=ReliabilityPolicy.RELIABLE,
+                                 durability=DurabilityPolicy.VOLATILE)
+            self.cmd_pub = self.create_publisher(String, '/gcs/command', cmd_qos)
+            # Optional team-side ack (see HANDOFF.md). If they publish it, the GUI
+            # shows "drone acknowledged X" instead of just "sent".
+            self.create_subscription(String, '/gcs/command_ack', self.on_command_ack, cmd_qos)
 
             # ── Semantic results + service clients (separate package) ──────
             self.trigger_indexing_client = None
@@ -378,6 +418,13 @@ if ROS_AVAILABLE:
             push_log("IN", "/semantic_retrieval/results", summary,
                      {"seed": seed, "has_match": msg.has_match, "match_count": msg.match_count})
 
+        # ── GCS command ack (team-published; optional) ─────────────────────
+        def on_command_ack(self, msg):
+            with state_lock:
+                state["last_command_ack"]    = msg.data
+                state["last_command_ack_ts"] = time.time()
+            push_log("IN", "/gcs/command_ack", msg.data)
+
         # ── Docking → fire on-dock auto-trigger ONCE ───────────────────────
         def on_drone_status(self, msg):
             data = msg.data
@@ -490,6 +537,58 @@ def _get_hd_frame(frame_index: int, timeout: float = 5.0):
 def _publish_seed(ros_img):
     """Thread-safe seed publish: marshal onto the executor thread."""
     _enqueue_task(lambda node: node.seed_pub.publish(ros_img))
+
+
+# ── GCS command: server-side precondition gate + marshalled publish ──────────
+def command_precondition(cmd: str):
+    """Defense-in-depth gate (the authoritative gating lives on the drone). The
+    UI disables buttons too, but this stops a buggy/hostile LAN client from
+    publishing e.g. START mid-flight. Returns (ok: bool, reason: str)."""
+    with state_lock:
+        connected = state["connected"]
+        armed     = state["armed"]
+        landed    = state["landedState"]
+    in_air = armed or landed == "IN_AIR"
+
+    if not connected:
+        return False, "ROS link down"
+    if cmd == "START":
+        if in_air:
+            return False, "already armed / in-air"
+        return True, ""
+    # ABORT / HOLD / RTL / ABORT_DOCK / RECALL are all in-air overrides.
+    if not in_air:
+        return False, "drone not armed / in-air"
+    return True, ""
+
+
+def _publish_command(cmd: str) -> Dict[str, Any]:
+    """Publish a vocab command to /gcs/command (marshalled to the executor)."""
+    with state_lock:
+        state["last_command"]    = cmd
+        state["last_command_ts"] = time.time()
+
+    if not (ROS_AVAILABLE and _node is not None):
+        push_log("OUT", "/gcs/command", f"(mock) {cmd}")
+        return {"published": True, "command": cmd, "mock": True}
+
+    def task(node):
+        m = String()
+        m.data = cmd
+        node.cmd_pub.publish(m)
+
+    _enqueue_task(task)
+    push_log("OUT", "/gcs/command", cmd)
+    return {"published": True, "command": cmd}
+
+
+# ── Operator-token dependency (mutating endpoints only) ──────────────────────
+def require_token(x_gcs_token: str = Header(default="")):
+    """Enforce X-GCS-Token when GCS_COMMAND_TOKEN is set in the environment.
+    Unset → open (dev/mock). Applies only to the GUI↔backend command path."""
+    if GCS_TOKEN and x_gcs_token != GCS_TOKEN:
+        raise HTTPException(status_code=401, detail="invalid or missing X-GCS-Token")
+    return True
 
 
 # ── ROS2 spin thread ─────────────────────────────────────────────────────────
@@ -638,7 +737,8 @@ def semantic_status():
 
 
 @app.post("/api/add_seed")
-def add_seed(file: UploadFile = File(...), seed_name: str = Form(...)):
+def add_seed(file: UploadFile = File(...), seed_name: str = Form(...),
+             _auth: bool = Depends(require_token)):
     """Upload an image → publish to /semantic_retrieval/add_seed (frame_id = seed name)."""
     raw = file.file.read()
     if not raw:
@@ -689,10 +789,29 @@ def add_seed(file: UploadFile = File(...), seed_name: str = Form(...)):
 
 
 @app.post("/api/trigger_indexing")
-def trigger_indexing(req: TriggerIndexingRequest):
+def trigger_indexing(req: TriggerIndexingRequest, _auth: bool = Depends(require_token)):
     """Kick off rosbag indexing (async). Returns submitted/queued immediately."""
     result = _trigger_indexing(req.rosbag_path, req.output_db_path, req.force_reindex)
     return result
+
+
+@app.post("/api/command")
+def command(req: CommandRequest, _auth: bool = Depends(require_token)):
+    """Publish a fixed-vocab override command to /gcs/command.
+
+    400 if the command is not in the vocabulary; 409 if the current flight
+    state forbids it (e.g. START while in-air). A 200 means we PUBLISHED the
+    command — not that the drone obeyed. Watch last_command_ack (if the flight
+    team echoes /gcs/command_ack) for actual acknowledgement.
+    """
+    cmd = req.command.strip().upper()
+    if cmd not in COMMAND_VOCAB:
+        raise HTTPException(status_code=400,
+                            detail=f"unknown command '{cmd}' (allowed: {', '.join(COMMAND_VOCAB)})")
+    ok, reason = command_precondition(cmd)
+    if not ok:
+        raise HTTPException(status_code=409, detail=f"{cmd} blocked: {reason}")
+    return _publish_command(cmd)
 
 
 @app.get("/api/frame/{frame_index}")

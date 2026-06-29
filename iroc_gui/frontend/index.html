@@ -463,6 +463,99 @@
   #toast .t { font-size: var(--t-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--copper-hi); }
   #toast .s { font-size: var(--t-xs); font-family: var(--font-mono); color: var(--muted); margin-top: 1px; }
 
+  /* ── Generic danger button (modal confirm) ──────────────────────────── */
+  .btn-danger { background: var(--critical); color: oklch(0.98 0.01 25); border: 1px solid var(--critical); font-weight: 600; }
+  .btn-danger:hover:not(:disabled) { background: color-mix(in oklch, var(--critical) 86%, white); }
+
+  /* ── OVERRIDES drawer ────────────────────────────────────────────────── */
+  .ov-toggle {
+    height: 30px; padding: 0 13px; border-radius: var(--r-sm); cursor: pointer; flex-shrink: 0;
+    display: inline-flex; align-items: center; gap: 8px;
+    background: transparent; color: var(--critical);
+    border: 1px solid color-mix(in oklch, var(--critical) 45%, var(--hairline));
+    font-family: var(--font-ui); font-size: var(--t-xs); font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    transition: background var(--dur) var(--ease);
+  }
+  .ov-toggle:hover { background: color-mix(in oklch, var(--critical) 14%, transparent); }
+  .ov-toggle:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 2px; }
+  .ov-toggle .glyph { width: 7px; height: 7px; border-radius: 50%; background: var(--critical); flex-shrink: 0; }
+  .ov-toggle.live .glyph { animation: pulse-dot 1.3s var(--ease) infinite; }
+
+  #ov-drawer {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 320px; z-index: 45;
+    background: var(--surface); border-left: 1px solid var(--hairline);
+    box-shadow: -18px 0 44px oklch(0 0 0 / 0.42);
+    transform: translateX(100%); transition: transform 220ms var(--ease);
+    display: flex; flex-direction: column;
+  }
+  #ov-drawer.open { transform: translateX(0); }
+  #ov-drawer > header {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 36px; padding: 0 14px; background: var(--navy); border-bottom: 1px solid var(--hairline); flex-shrink: 0;
+  }
+  .ov-close { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: var(--t-base); line-height: 1; padding: 4px; }
+  .ov-close:hover { color: var(--ink); }
+  .ov-note { padding: 11px 14px; font-size: var(--t-xs); line-height: 1.55; color: var(--muted); border-bottom: 1px solid var(--hairline); }
+  .ov-note .mono { color: var(--ink-2); }
+
+  .cmd-list { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 9px; }
+  .cmd-group-label { margin: 4px 0 1px; }
+  .cmd-btn {
+    width: 100%; min-height: 46px; padding: 8px 13px; border-radius: var(--r-sm); cursor: pointer;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+    font-family: var(--font-ui); font-weight: 600; font-size: var(--t-sm);
+    letter-spacing: 0.04em; text-transform: uppercase;
+    border: 1px solid var(--hairline); background: var(--surface-2); color: var(--ink);
+    transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), opacity var(--dur) var(--ease);
+  }
+  .cmd-btn .sub { font-size: 0.625rem; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); }
+  .cmd-btn:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 2px; }
+  .cmd-btn:disabled { opacity: 0.38; cursor: not-allowed; }
+  .cmd-btn.start:not(:disabled) { background: var(--copper); border-color: var(--copper); color: oklch(0.18 0.02 250); }
+  .cmd-btn.start:not(:disabled) .sub { color: oklch(0.28 0.04 60); }
+  .cmd-btn.start:not(:disabled):hover { background: var(--copper-hi); }
+  .cmd-btn.danger { border-color: color-mix(in oklch, var(--critical) 42%, var(--hairline)); color: var(--critical); }
+  .cmd-btn.danger .sub { color: color-mix(in oklch, var(--critical) 55%, var(--muted)); }
+  .cmd-btn.danger:not(:disabled):hover { background: color-mix(in oklch, var(--critical) 16%, transparent); }
+  .cmd-btn.abort:not(:disabled) { background: color-mix(in oklch, var(--critical) 16%, var(--surface-2)); min-height: 56px; }
+  .cmd-btn.sending { opacity: 0.6; pointer-events: none; }
+
+  .ov-status, .ov-ack { padding: 9px 14px; font-size: var(--t-xs); font-family: var(--font-mono); border-top: 1px solid var(--hairline); }
+  .ov-status { color: var(--muted); }
+  .ov-status.ok  { color: var(--nominal); }
+  .ov-status.err { color: var(--critical); }
+  .ov-status.pending { color: var(--caution); }
+  .ov-ack { color: var(--ink-2); }
+  .ov-ack.ok { color: var(--nominal); }
+  .ov-token { padding: 11px 14px; display: flex; flex-direction: column; gap: 5px; border-top: 1px solid var(--hairline); }
+  .ov-token input {
+    height: 30px; padding: 0 10px; border-radius: var(--r-sm); background: var(--bg);
+    border: 1px solid var(--hairline); color: var(--ink); font-family: var(--font-mono); font-size: var(--t-sm);
+  }
+  .ov-token input:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 1px; border-color: var(--copper); }
+  .ov-token.flash input { border-color: var(--critical); }
+
+  /* Command confirm modal */
+  #cmd-modal { position: absolute; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center;
+    background: oklch(0.10 0.01 250 / 0.55); backdrop-filter: blur(2px); }
+  #cmd-modal.open { display: flex; }
+  #cmd-modal .box { width: 372px; max-width: calc(100vw - 32px); background: var(--surface);
+    border: 1px solid color-mix(in oklch, var(--critical) 35%, var(--hairline)); border-radius: var(--r-md);
+    overflow: hidden; box-shadow: 0 24px 60px oklch(0 0 0 / 0.5); }
+  #cmd-modal .box > header { height: 38px; display: flex; align-items: center; padding: 0 16px; background: var(--navy); border-bottom: 1px solid var(--hairline); }
+  #cmd-modal .cm-body { padding: 16px; display: flex; flex-direction: column; gap: 11px; }
+  #cmd-modal .cm-desc { font-size: var(--t-sm); color: var(--ink-2); line-height: 1.5; }
+  #cmd-modal .cm-state { font-size: var(--t-xs); color: var(--muted); }
+  #cmd-modal .cm-type-wrap { display: none; flex-direction: column; gap: 6px; }
+  #cmd-modal .cm-type-wrap input {
+    height: 36px; padding: 0 12px; border-radius: var(--r-sm); background: var(--bg);
+    border: 1px solid color-mix(in oklch, var(--critical) 45%, var(--hairline)); color: var(--ink);
+    font-family: var(--font-mono); font-size: var(--t-base); letter-spacing: 0.18em; text-transform: uppercase;
+  }
+  #cmd-modal .cm-type-wrap input:focus-visible { outline: 2px solid var(--critical); outline-offset: 1px; }
+  #cmd-modal footer { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 16px; border-top: 1px solid var(--hairline); }
+
   /* Scrollbars */
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: 5px; border: 2px solid var(--bg); }
@@ -515,6 +608,10 @@
     <button class="tab active" data-page="controller" onclick="switchTab(event,'controller')">Controller</button>
     <button class="tab"        data-page="analysis"   onclick="switchTab(event,'analysis')">Analysis</button>
   </nav>
+
+  <button class="ov-toggle" id="ov-toggle" aria-expanded="false" aria-controls="ov-drawer" onclick="toggleDrawer()">
+    <span class="glyph"></span> Overrides
+  </button>
 </header>
 
 <div id="main">
@@ -655,6 +752,66 @@
     </div>
   </section>
 
+  <!-- ═══ OVERRIDES drawer (manual command surface) ═════════════════════ -->
+  <aside id="ov-drawer" aria-label="Override commands">
+    <header>
+      <span class="label">Overrides · Manual</span>
+      <button class="ov-close" onclick="toggleDrawer(false)" aria-label="Close overrides">✕</button>
+    </header>
+    <div class="ov-note">
+      Console is observational. These publish to <span class="mono">/gcs/command</span> — the
+      drone decides. A success means <em>sent</em>, not obeyed; watch the ack below.
+    </div>
+    <div class="cmd-list">
+      <span class="cmd-group-label label">Mission</span>
+      <button class="cmd-btn start" id="cmd-START" onclick="requestCommand('START')" disabled>
+        <span>Start</span><span class="sub">undock → launch → survey</span>
+      </button>
+
+      <span class="cmd-group-label label">Emergency</span>
+      <button class="cmd-btn abort danger" id="cmd-ABORT" onclick="requestCommand('ABORT')" disabled>
+        <span>Abort</span><span class="sub">land in place · disarm</span>
+      </button>
+      <button class="cmd-btn danger" id="cmd-HOLD" onclick="requestCommand('HOLD')" disabled>
+        <span>Hold</span><span class="sub">halt &amp; hold position</span>
+      </button>
+      <button class="cmd-btn danger" id="cmd-RTL" onclick="requestCommand('RTL')" disabled>
+        <span>RTL</span><span class="sub">return to launch · loiter</span>
+      </button>
+      <button class="cmd-btn danger" id="cmd-ABORT_DOCK" onclick="requestCommand('ABORT_DOCK')" disabled>
+        <span>Abort Dock</span><span class="sub">break off docking · climb</span>
+      </button>
+      <button class="cmd-btn danger" id="cmd-RECALL" onclick="requestCommand('RECALL')" disabled>
+        <span>Recall</span><span class="sub">return to base &amp; land</span>
+      </button>
+    </div>
+    <div class="ov-status" id="ov-status">no command issued</div>
+    <div class="ov-ack" id="ov-ack">drone ack: —</div>
+    <div class="ov-token" id="ov-token">
+      <label class="label" for="ov-token-input">Operator token</label>
+      <input id="ov-token-input" type="password" autocomplete="off" placeholder="only if backend enforces" />
+    </div>
+  </aside>
+
+  <!-- Command confirm modal -->
+  <div id="cmd-modal" role="dialog" aria-modal="true" aria-labelledby="cm-title">
+    <div class="box">
+      <header><span class="label" id="cm-title">Confirm</span></header>
+      <div class="cm-body">
+        <p class="cm-desc" id="cm-desc"></p>
+        <p class="cm-state mono" id="cm-state"></p>
+        <div class="cm-type-wrap" id="cm-type-wrap">
+          <label class="label" for="cm-type">Type ABORT to confirm</label>
+          <input id="cm-type" type="text" autocomplete="off" spellcheck="false" />
+        </div>
+      </div>
+      <footer>
+        <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-danger" id="cm-ok" onclick="confirmCommand()">Confirm</button>
+      </footer>
+    </div>
+  </div>
+
 </div>
 
 <!-- Toast -->
@@ -688,6 +845,9 @@ let lastThreshold   = null;
 let videoOk         = false;
 let toastTimer      = null;
 let wsConnected     = false;
+let rosLink         = false;   // mirrors telemetry.connected
+let flightInAir     = false;   // armed || landedState === IN_AIR
+let pendingCmd      = null;    // command awaiting modal confirm
 
 // ── Utilities ───────────────────────────────────────────────────────────────
 function esc(s) {
@@ -741,6 +901,7 @@ function connectWS() {
     if (snap.telemetry)        updateTelemetry(snap.telemetry);
     updateVslam(snap.vslam_status, snap.vslam_pose, snap.vslam_path);
     if (snap.semantic_results) ingestSemantic(snap.semantic_results, snap.semantic_status);
+    updateCmdEcho(snap);
   };
 }
 let reconnectT = null;
@@ -775,6 +936,11 @@ function updateTelemetry(t) {
   const hdg = ((yaw % 360) + 360) % 360;
 
   markRos(!!t.connected);
+
+  // Command gating mirrors the backend precondition (UX layer over server gate)
+  rosLink     = !!t.connected;
+  flightInAir = !!t.armed || t.landedState === 'IN_AIR';
+  gateCommands();
 
   // Chips
   setChip('chip-fcu',  t.fcuConnected ? 'is-nominal' : 'is-caution', t.fcuConnected ? 'LINK' : 'NO LINK');
@@ -1085,6 +1251,138 @@ function handleExportReport() {
   a.download = `anveshan_validation_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
   a.click();
 }
+
+// ══ Overrides drawer + commands ═════════════════════════════════════════════
+// Every button publishes a fixed-vocab string to /gcs/command via POST
+// /api/command. A 200 means PUBLISHED — never "obeyed". The drone (flight team's
+// subscriber) decides; if they echo /gcs/command_ack we surface it below.
+const CMD_INFO = {
+  START:      { label: 'START',      desc: 'Authorize autonomous mission: undock → launch → survey.',                 kind: 'start' },
+  ABORT:      { label: 'ABORT',      desc: 'Emergency: controlled descent & disarm at the current X/Y (land in place).', kind: 'danger' },
+  HOLD:       { label: 'HOLD',       desc: 'Halt motion and hold / loiter the current position.',                      kind: 'danger' },
+  RTL:        { label: 'RTL',        desc: 'Return to launch (base) and loiter, awaiting decision.',                   kind: 'danger' },
+  ABORT_DOCK: { label: 'ABORT DOCK', desc: 'Interrupt the docking attempt, climb to a safe altitude, hold.',          kind: 'danger' },
+  RECALL:     { label: 'RECALL',     desc: 'End the sortie gracefully: return to base and land.',                     kind: 'danger' },
+};
+
+function toggleDrawer(force) {
+  const d = document.getElementById('ov-drawer');
+  const open = (force != null) ? force : !d.classList.contains('open');
+  d.classList.toggle('open', open);
+  document.getElementById('ov-toggle').setAttribute('aria-expanded', String(open));
+}
+
+// Mirror the backend precondition gate so disabled buttons explain themselves.
+function gateCommands() {
+  const set = (cmd, enabled, reason) => {
+    const b = document.getElementById('cmd-' + cmd);
+    if (!b) return;
+    b.disabled = !enabled;
+    b.title = enabled ? '' : reason;
+  };
+  const noLink = 'ROS link down';
+  set('START', rosLink && !flightInAir, !rosLink ? noLink : 'already armed / in-air');
+  ['ABORT', 'HOLD', 'RTL', 'ABORT_DOCK', 'RECALL'].forEach(c =>
+    set(c, rosLink && flightInAir, !rosLink ? noLink : 'drone not armed / in-air'));
+}
+
+function setOvStatus(text, cls) {
+  const el = document.getElementById('ov-status');
+  el.textContent = text;
+  el.className = 'ov-status' + (cls ? ' ' + cls : '');
+}
+
+let lastAckShown = 0;
+function updateCmdEcho(snap) {
+  if (snap.last_command_ack && snap.last_command_ack_ts && snap.last_command_ack_ts !== lastAckShown) {
+    lastAckShown = snap.last_command_ack_ts;
+    const a = document.getElementById('ov-ack');
+    a.textContent = 'drone ack: ' + snap.last_command_ack;
+    a.className = 'ov-ack ok';
+  }
+  // Pulse the toggle while a command is published but not yet acknowledged.
+  const pending = snap.last_command &&
+    (!snap.last_command_ack_ts || (snap.last_command_ts || 0) > snap.last_command_ack_ts);
+  document.getElementById('ov-toggle').classList.toggle('live', !!pending);
+}
+
+function requestCommand(cmd) {
+  const info = CMD_INFO[cmd];
+  if (!info) return;
+  pendingCmd = cmd;
+  document.getElementById('cm-title').textContent = 'Confirm ' + info.label;
+  document.getElementById('cm-desc').textContent  = info.desc;
+  document.getElementById('cm-state').textContent =
+    `current state: ${rosLink ? 'ROS up' : 'ROS DOWN'} · ${flightInAir ? 'IN-AIR' : 'on ground'}`;
+  const typed = (cmd === 'ABORT');                  // type-to-confirm the destructive one
+  document.getElementById('cm-type-wrap').style.display = typed ? 'flex' : 'none';
+  const input = document.getElementById('cm-type'); input.value = '';
+  const ok = document.getElementById('cm-ok');
+  ok.textContent = 'Confirm ' + info.label;
+  ok.className = 'btn ' + (info.kind === 'start' ? 'btn-primary' : 'btn-danger');
+  ok.disabled = typed;
+  document.getElementById('cmd-modal').classList.add('open');
+  if (typed) setTimeout(() => input.focus(), 30);
+}
+
+function closeModal() {
+  document.getElementById('cmd-modal').classList.remove('open');
+  pendingCmd = null;
+}
+
+async function confirmCommand() {
+  const cmd = pendingCmd;
+  closeModal();
+  if (cmd) await sendCommand(cmd);
+}
+
+async function sendCommand(cmd) {
+  const btn = document.getElementById('cmd-' + cmd);
+  if (btn) btn.classList.add('sending');
+  setOvStatus(`sending ${cmd}…`, 'pending');
+  try {
+    const tok = sessionStorage.getItem('gcsToken') || '';
+    const headers = { 'Content-Type': 'application/json' };
+    if (tok) headers['X-GCS-Token'] = tok;
+    const r = await fetch(API_BASE + '/api/command', {
+      method: 'POST', headers, body: JSON.stringify({ command: cmd }),
+    });
+    let j = {}; try { j = await r.json(); } catch (_) {}
+    if (r.status === 401) { setOvStatus('token required / invalid', 'err'); flashToken(); return; }
+    if (!r.ok) { setOvStatus(`${cmd} blocked: ${j.detail || r.status}`, 'err'); return; }
+    setOvStatus(`${cmd} sent · ${new Date().toISOString().slice(11, 19)} — awaiting drone ack`, 'ok');
+    showToast(cmd, '—', undefined);
+    document.getElementById('toast-t').textContent = 'Command published';
+    document.getElementById('toast-s').textContent = cmd + ' → /gcs/command';
+  } catch (e) {
+    setOvStatus(`${cmd} failed: ${e.message || e}`, 'err');
+  } finally {
+    if (btn) btn.classList.remove('sending');
+  }
+}
+
+function flashToken() {
+  toggleDrawer(true);
+  const t = document.getElementById('ov-token');
+  t.classList.add('flash');
+  document.getElementById('ov-token-input').focus();
+  setTimeout(() => t.classList.remove('flash'), 1600);
+}
+
+(function initCommands() {
+  const ti = document.getElementById('ov-token-input');
+  ti.value = sessionStorage.getItem('gcsToken') || '';
+  ti.addEventListener('input', e => sessionStorage.setItem('gcsToken', e.target.value));
+  document.getElementById('cm-type').addEventListener('input', e => {
+    document.getElementById('cm-ok').disabled = e.target.value.trim().toUpperCase() !== 'ABORT';
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (document.getElementById('cmd-modal').classList.contains('open')) closeModal();
+    else toggleDrawer(false);
+  });
+  gateCommands();
+})();
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 bootVideo();
