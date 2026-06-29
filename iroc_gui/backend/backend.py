@@ -117,6 +117,7 @@ state = {
     "semantic_status":  "IDLE",
     "semantic_results": {},        # seed_name → result dict
     "seeds":            [],        # registered seed names (publish order / mock)
+    "seed_images":      {},        # seed_name → {"media_type": str, "data": bytes} (GUI thumbnails)
 
     # --- docking / autonomous charging ---
     "dock_status": "UNKNOWN",
@@ -748,6 +749,15 @@ def add_seed(file: UploadFile = File(...), seed_name: str = Form(...),
         return Response(content=json.dumps({"error": "file too large (max 25 MB)"}),
                         media_type="application/json", status_code=413)
 
+    # Keep the raw bytes so the GUI can show a real thumbnail for this seed
+    # (served via GET /api/seed_image/{seed_name}). Survives browser refresh and
+    # is visible to every LAN client, unlike the browser-local preview.
+    with state_lock:
+        state["seed_images"][seed_name] = {
+            "media_type": file.content_type or "image/png",
+            "data": raw,
+        }
+
     if ROS_AVAILABLE:
         np_arr = np.frombuffer(raw, np.uint8)
         cv_img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
@@ -786,6 +796,37 @@ def add_seed(file: UploadFile = File(...), seed_name: str = Form(...),
         })
     push_log("OUT", "/semantic_retrieval/add_seed", f"(mock) stored seed {seed_name}")
     return {"success": True, "seed_name": seed_name, "message": "seed stored (mock mode)"}
+
+
+@app.get("/api/seed_image/{seed_name}")
+def seed_image(seed_name: str):
+    """Return the operator-uploaded seed reference image (GUI thumbnail).
+
+    404 when the seed was loaded on-robot from a seeds_dir rather than uploaded
+    through the GUI — the frontend falls back to a placeholder in that case.
+    """
+    with state_lock:
+        entry = state["seed_images"].get(seed_name)
+    if entry:
+        return Response(content=entry["data"], media_type=entry["media_type"])
+
+    # Fallback: if the backend shares the filesystem with the seeds_dir (the
+    # all-on-one-box test), serve the image straight from disk by seed name.
+    # GCS_SEEDS_DIR is set by gui_bringup.launch.py. Realpath-pinned so a crafted
+    # seed_name can't escape the folder.
+    seeds_dir = os.environ.get("GCS_SEEDS_DIR", "").strip()
+    if seeds_dir and os.path.isdir(seeds_dir):
+        root = os.path.realpath(seeds_dir)
+        for ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff"):
+            p = os.path.join(seeds_dir, seed_name + ext)
+            if os.path.isfile(p) and os.path.realpath(p).startswith(root + os.sep):
+                mt = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                      ".bmp": "image/bmp", ".tiff": "image/tiff"}[ext]
+                with open(p, "rb") as f:
+                    return Response(content=f.read(), media_type=mt)
+
+    return Response(content=json.dumps({"error": "no image for seed"}),
+                    media_type="application/json", status_code=404)
 
 
 @app.post("/api/trigger_indexing")

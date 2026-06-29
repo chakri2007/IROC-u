@@ -110,6 +110,14 @@ class RetrieverNode(Node):
         # seed_name → seed_embedding (1, D)
         self.seeds: dict[str, torch.Tensor] = {}
 
+        # seed_name → last published result signature. The retrieval cycle also
+        # fires on a periodic timer (a backstop), but the match is static once the
+        # DB is built — so we publish + log ONLY when a seed's result actually
+        # changes, instead of re-emitting identical results every cycle (which
+        # floods the console and the topic). Latched QoS still hands the last
+        # result to any GUI that joins late, so publish-on-change loses nothing.
+        self._last_published: dict[str, tuple] = {}
+
         # ---- Publishers ----
         results_topic = self.get_parameter("results_topic").value
         status_topic  = self.get_parameter("status_topic").value
@@ -329,6 +337,17 @@ class RetrieverNode(Node):
                     threshold=self.threshold,
                     poses=pose_snapshot,
                 )
+
+                # Skip if this seed's result is identical to what we last
+                # published — keeps the topic + console quiet once converged.
+                signature = (
+                    bool(result["has_match"]),
+                    tuple(int(i) for i in result["frame_indices"]),
+                    tuple(round(float(s), 4) for s in result["scores"]),
+                )
+                if self._last_published.get(seed_name) == signature:
+                    continue
+                self._last_published[seed_name] = signature
 
                 ros_msg = self._build_ros_message(
                     seed_name=seed_name,

@@ -140,7 +140,13 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('with_backend')),
         cmd=[py, 'backend/backend.py'],
         cwd=iroc_gui_dir,
-        additional_env={'GCS_COMMAND_TOKEN': LaunchConfiguration('gcs_token')},
+        additional_env={
+            'GCS_COMMAND_TOKEN': LaunchConfiguration('gcs_token'),
+            # Lets the backend serve seed thumbnails straight from the seeds_dir
+            # when it shares the filesystem (all-on-one-box). Harmless if the path
+            # doesn't exist (e.g. backend on a separate laptop).
+            'GCS_SEEDS_DIR': LaunchConfiguration('seeds_dir'),
+        },
         output='screen', name='gcs_backend')
 
     frontend = ExecuteProcess(

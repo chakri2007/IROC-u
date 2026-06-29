@@ -1093,9 +1093,14 @@ function renderSeedRail(seedNames) {
     const cnt = (r && r.match_count) || 0;
     const card = document.createElement('div');
     card.className = 'seed-card';
-    const thumb = manualSeeds.get(name);
+    // Prefer the just-uploaded local preview; otherwise ask the backend for the
+    // stored seed image; if neither exists (e.g. seed loaded from a seeds_dir on
+    // the robot), the onerror handler swaps in a "SEED" placeholder box.
+    const localThumb = manualSeeds.get(name);
+    const thumbSrc = localThumb || (API_BASE + '/api/seed_image/' + encodeURIComponent(name));
+    const thumbFallback = "this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'thumb',textContent:'SEED'}))";
     card.innerHTML = `
-      ${thumb ? `<img class="thumb" src="${esc(thumb)}" alt="">` : `<div class="thumb">SEED</div>`}
+      <img class="thumb" src="${esc(thumbSrc)}" alt="" onerror="${thumbFallback}">
       <div class="meta">
         <span class="nm" title="${esc(name)}">${esc(name)}</span>
         <span class="st ${has ? 'match' : 'nomatch'}">${has ? cnt + ' match' + (cnt === 1 ? '' : 'es') : 'no match yet'}</span>
