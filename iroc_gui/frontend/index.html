@@ -741,9 +741,10 @@
       <!-- Detections -->
       <div class="panel dets">
         <header><span class="label">Detections · rel. base</span>
-          <span class="unit">show&nbsp;≥&nbsp;<input id="disp-thr" type="number" min="0" max="1" step="0.01" value="0.57"
-            oninput="renderAnalysis()" title="Display threshold — filters matches live (does not re-run retrieval)"
-            style="width:3.6em;background:#0f1117;color:inherit;border:1px solid #2a2f3a;border-radius:4px;font-family:var(--font-mono);font-size:var(--t-xs);padding:1px 4px;" /></span></header>
+          <span class="unit" style="display:inline-flex;align-items:center;gap:7px;font-size:var(--t-sm);letter-spacing:0.04em;">MATCH&nbsp;≥
+            <input id="disp-thr" type="number" min="0" max="1" step="0.01" value="0.57"
+              oninput="renderAnalysis()" title="Display threshold — filters matches live (does not re-run retrieval)"
+              style="width:5em;background:#0f1117;color:#cfe8d0;border:1px solid #3a4a3f;border-radius:6px;font-family:var(--font-mono);font-size:1rem;font-weight:600;padding:4px 8px;text-align:center;" /></span></header>
         <div class="body">
           <div id="det-grid"></div>
           <div class="det-empty" id="det-empty">
