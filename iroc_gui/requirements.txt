@@ -1,6 +1,7 @@
 # GUI backend (FastAPI). Install with:  pip install -r requirements.txt
 fastapi
 uvicorn[standard]
+python-multipart   # required by /api/add_seed (multipart Form + UploadFile)
 
 # ROS 2 deps (rclpy, nav_msgs, sensor_msgs, std_msgs, mavros_msgs) come from the
 # sourced ROS 2 environment, NOT pip. The backend falls back to mock data if
