@@ -109,6 +109,20 @@ def generate_launch_description():
             'gcs_token', default_value='',
             description='If non-empty, exported as GCS_COMMAND_TOKEN so the backend '
                         'enforces X-GCS-Token auth on the override/seed endpoints.'),
+        # ── Docking (off by default; needs the station RPi reachable) ──
+        DeclareLaunchArgument('with_dock', default_value='false',
+            description='Run the docking orchestrator (dock_manager). Needs the '
+                        'docking-station RPi (station_gcs.py) reachable at gcs_host.'),
+        DeclareLaunchArgument('gcs_host', default_value='192.168.0.114',
+            description='Docking-station RPi IP (the station_gcs.py TCP server).'),
+        DeclareLaunchArgument('gcs_port', default_value='55555'),
+        DeclareLaunchArgument('settle_delay', default_value='30.0',
+            description='Seconds dock_manager waits after startup before the first dock.'),
+        DeclareLaunchArgument('charge_mah', default_value='260',
+            description='Default charge target (mAh). The GUI numbox can override per-charge.'),
+        DeclareLaunchArgument('auto_dock', default_value='true',
+            description='Auto dock + charge on settle and after each landing.'),
+
         # Component toggles — flip to split Jetson (nodes) vs laptop (GUI).
         DeclareLaunchArgument('with_indexer',   default_value='true'),
         DeclareLaunchArgument('with_retriever', default_value='true'),
@@ -178,6 +192,17 @@ def generate_launch_description():
         cwd=iroc_gui_dir,
         output='screen', name='gcs_frontend')
 
+    # ---- Docking orchestrator (talks TCP to the station RPi) --------------
+    dock = ExecuteProcess(
+        condition=IfCondition(LaunchConfiguration('with_dock')),
+        cmd=[py, 'docking/dock_manager.py', '--ros-args',
+             '-p', ['gcs_host:=', LaunchConfiguration('gcs_host')],
+             '-p', ['gcs_port:=', LaunchConfiguration('gcs_port')],
+             '-p', ['settle_delay_sec:=', LaunchConfiguration('settle_delay')],
+             '-p', ['default_charge_mah:=', LaunchConfiguration('charge_mah')],
+             '-p', ['auto_dock:=', LaunchConfiguration('auto_dock')]],
+        cwd=iroc_gui_dir, output='screen', name='dock_manager')
+
     banner = LogInfo(msg=[
         '\n┌─ Anveshan GCS bring-up ───────────────────────────────────\n',
         '│ backend  : http://0.0.0.0:5000  (docs /docs)\n',
@@ -192,4 +217,4 @@ def generate_launch_description():
     ])
 
     return LaunchDescription(
-        args + [banner, indexer, retriever, hd_server, backend, frontend])
+        args + [banner, indexer, retriever, hd_server, backend, frontend, dock])

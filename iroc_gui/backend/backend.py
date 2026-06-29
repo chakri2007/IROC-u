@@ -95,6 +95,26 @@ def push_log(direction: str, topic: str, summary: str, data: Optional[dict] = No
         log_buffer.append(entry)
 
 
+# ── Docking terminal stream (TCP traffic + live PID lines from dock_manager) ──
+# Separate from the structured log above: this is the raw green-terminal feed the
+# GUI's docking panel polls via /api/dock/log?since=<seq>.
+MAX_DOCK_LOG  = 600
+dock_log_buf  = collections.deque(maxlen=MAX_DOCK_LOG)
+dock_log_lock = threading.Lock()
+_dock_log_seq = 0
+
+
+def push_dock_log(text: str):
+    global _dock_log_seq
+    with dock_log_lock:
+        _dock_log_seq += 1
+        dock_log_buf.append({
+            "seq":  _dock_log_seq,
+            "ts":   datetime.utcnow().strftime("%H:%M:%S"),
+            "text": text,
+        })
+
+
 # ── Shared state ─────────────────────────────────────────────────────────────
 state = {
     "connected":   False,          # ROS bridge is receiving
@@ -121,6 +141,7 @@ state = {
 
     # --- docking / autonomous charging ---
     "dock_status": "UNKNOWN",
+    "dock_state":  "UNKNOWN",      # dock_manager state machine (BOOT/SETTLING/DOCKING/…)
 
     # --- indexing job state ---
     "indexing": {"in_progress": False, "frames_indexed": 0, "message": "", "submitted": False},
@@ -168,6 +189,7 @@ def full_snapshot() -> Dict[str, Any]:
             "vslam_pose":       dict(state["vslam_pose"]),
             "vslam_path":       list(state["vslam_path"]),
             "dock_status":      state["dock_status"],
+            "dock_state":       state["dock_state"],
             "last_command":     state["last_command"],
             "last_command_ts":  state["last_command_ts"],
             "last_command_ack": state["last_command_ack"],
@@ -272,6 +294,14 @@ if ROS_AVAILABLE:
             # ── Publisher: runtime seeds (header.frame_id = seed name) ─────
             self.seed_pub = self.create_publisher(RosImage, '/semantic_retrieval/add_seed', 10)
             self.remove_pub = self.create_publisher(String, '/semantic_retrieval/remove_seed', 10)
+
+            # ── Docking orchestrator (dock_manager) ────────────────────────
+            self.dock_cmd_pub = self.create_publisher(String, '/dock/command', 10)
+            dock_state_qos = QoSProfile(depth=1,
+                                        reliability=ReliabilityPolicy.RELIABLE,
+                                        durability=DurabilityPolicy.TRANSIENT_LOCAL)
+            self.create_subscription(String, '/dock/state', self.on_dock_state, dock_state_qos)
+            self.create_subscription(String, '/dock/log',   self.on_dock_log,   50)
 
             # ── GCS command publisher + ack subscriber ─────────────────────
             # RELIABLE so a safety command can't be silently dropped; VOLATILE
@@ -427,6 +457,15 @@ if ROS_AVAILABLE:
                 state["last_command_ack_ts"] = time.time()
             push_log("IN", "/gcs/command_ack", msg.data)
 
+        # ── dock_manager state + terminal stream ───────────────────────────
+        def on_dock_state(self, msg):
+            with state_lock:
+                state["dock_state"] = msg.data
+            # don't echo to dock_log — dock_manager already streams a [STATE] line
+
+        def on_dock_log(self, msg):
+            push_dock_log(msg.data)
+
         # ── Docking → fire on-dock auto-trigger ONCE ───────────────────────
         def on_drone_status(self, msg):
             data = msg.data
@@ -546,6 +585,13 @@ def _publish_remove_seed(name: str):
     msg = String()
     msg.data = name
     _enqueue_task(lambda node: node.remove_pub.publish(msg))
+
+
+def _publish_dock_command(cmd: str):
+    """Thread-safe docking command publish: marshal onto the executor thread."""
+    msg = String()
+    msg.data = cmd
+    _enqueue_task(lambda node: node.dock_cmd_pub.publish(msg))
 
 
 # ── GCS command: server-side precondition gate + marshalled publish ──────────
@@ -861,6 +907,40 @@ def get_config():
     except (TypeError, ValueError):
         dt = 0.57
     return {"display_threshold": dt}
+
+
+# ── Docking control + terminal feed ──────────────────────────────────────────
+_DOCK_VOCAB = ("DOCK", "UNDOCK", "STOP_CHARGING", "EMERGENCY", "IDLE")
+
+
+class DockCommandRequest(BaseModel):
+    command: str        # DOCK | UNDOCK | CHARGE | CHARGE:<mah> | STOP_CHARGING | EMERGENCY | IDLE
+
+
+@app.post("/api/dock/command")
+def dock_command(req: DockCommandRequest, _auth: bool = Depends(require_token)):
+    """Send a manual docking command to dock_manager on /dock/command."""
+    cmd = req.command.strip().upper()
+    base = cmd.split(":", 1)[0]
+    if base != "CHARGE" and base not in _DOCK_VOCAB:
+        raise HTTPException(status_code=400, detail=f"unknown dock command: {cmd}")
+    if not ROS_AVAILABLE:
+        return {"published": False, "command": cmd, "message": "ROS unavailable (mock mode)"}
+    _publish_dock_command(cmd)
+    push_log("OUT", "/dock/command", cmd)
+    return {"published": True, "command": cmd}
+
+
+@app.get("/api/dock/log")
+def dock_log(since: int = 0):
+    """Docking terminal lines after `since` (sequence id) + current dock state.
+    The GUI polls this while its docking panel is open."""
+    with dock_log_lock:
+        lines = [e for e in dock_log_buf if e["seq"] > since]
+        last = dock_log_buf[-1]["seq"] if dock_log_buf else since
+    with state_lock:
+        ds = state["dock_state"]
+    return {"lines": lines, "last_seq": last, "dock_state": ds}
 
 
 @app.post("/api/trigger_indexing")

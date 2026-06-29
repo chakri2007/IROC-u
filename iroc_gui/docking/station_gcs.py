@@ -110,8 +110,11 @@ def start_charging(target_mah: int = DEFAULT_CHARGE_MAH):
             charger_process.terminate()
             time.sleep(1.5)
 
+        # -u (unbuffered) so the charger's print()s stream line-by-line over TCP
+        # in real time. This is the ONLY accommodation needed — the charger script
+        # itself is untouched (it's a reverse-engineered, known-good binary path).
         charger_process = subprocess.Popen(
-            ["sudo", sys.executable, CHARGER_SCRIPT, "--target-mah", str(target_mah)],
+            ["sudo", sys.executable, "-u", CHARGER_SCRIPT, "--target-mah", str(target_mah)],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1, universal_newlines=True,
         )
