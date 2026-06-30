@@ -601,6 +601,68 @@
   #cmd-modal .cm-type-wrap input:focus-visible { outline: 2px solid var(--critical); outline-offset: 1px; }
   #cmd-modal footer { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 16px; border-top: 1px solid var(--hairline); }
 
+  /* ── CONFIG drawer ───────────────────────────────────────────────────── */
+  .cfg-toggle { color: var(--ink-2); border-color: var(--hairline); }
+  .cfg-toggle:hover { background: color-mix(in oklch, var(--copper) 12%, transparent);
+    color: var(--copper-hi); border-color: color-mix(in oklch, var(--copper) 40%, var(--hairline)); }
+  .cfg-toggle .glyph { background: var(--ink-2); border-radius: 1px; }
+  .cfg-toggle.dirty .glyph { background: var(--caution); animation: pulse-dot 1.4s var(--ease) infinite; }
+
+  #cfg-drawer {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 460px; max-width: 100vw; z-index: 47;
+    background: var(--surface); border-left: 1px solid var(--hairline);
+    box-shadow: -18px 0 44px oklch(0 0 0 / 0.45);
+    transform: translateX(100%); transition: transform 220ms var(--ease);
+    display: flex; flex-direction: column;
+  }
+  #cfg-drawer.open { transform: translateX(0); }
+  #cfg-drawer > header {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 36px; padding: 0 14px; background: var(--navy); border-bottom: 1px solid var(--hairline); flex-shrink: 0;
+  }
+  #cfg-drawer .cfg-body { flex: 1; overflow-y: auto; }
+
+  .cfg-section { border-bottom: 1px solid var(--hairline); }
+  .cfg-section > .sec-head {
+    display: flex; align-items: center; gap: 8px; padding: 9px 14px;
+    background: var(--navy-2); cursor: pointer; user-select: none;
+  }
+  .cfg-section > .sec-head .chev { margin-left: auto; color: var(--muted); font-size: 0.7rem; transition: transform var(--dur) var(--ease); }
+  .cfg-section.collapsed > .sec-head .chev { transform: rotate(-90deg); }
+  .cfg-section .sec-fields { padding: 10px 14px 13px; display: flex; flex-direction: column; gap: 10px; }
+  .cfg-section.collapsed .sec-fields { display: none; }
+
+  .cfg-field { display: flex; flex-direction: column; gap: 4px; }
+  .cfg-field.inline { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
+  .cfg-field > label { font-size: var(--t-xs); color: var(--ink-2); }
+  .cfg-field .hint { font-size: 0.5625rem; color: var(--muted); font-family: var(--font-mono); }
+  .cfg-input {
+    height: 30px; padding: 0 10px; border-radius: var(--r-sm); width: 100%;
+    background: var(--bg); border: 1px solid var(--hairline); color: var(--ink);
+    font-family: var(--font-mono); font-size: var(--t-sm); font-variant-numeric: tabular-nums;
+  }
+  .cfg-input:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 1px; border-color: var(--copper); }
+  select.cfg-input { cursor: pointer; }
+  .cfg-field.inline .cfg-input { width: auto; min-width: 8em; }
+
+  .cfg-switch {
+    width: 40px; height: 22px; border-radius: 11px; flex-shrink: 0; position: relative; cursor: pointer;
+    background: var(--bg); border: 1px solid var(--hairline); transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  }
+  .cfg-switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--muted); transition: transform var(--dur) var(--ease), background var(--dur) var(--ease);
+  }
+  .cfg-switch.on { background: color-mix(in oklch, var(--copper) 28%, var(--bg)); border-color: var(--copper); }
+  .cfg-switch.on::after { transform: translateX(18px); background: var(--copper); }
+  .cfg-switch:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 2px; }
+
+  .cfg-foot { flex-shrink: 0; border-top: 1px solid var(--hairline); padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
+  .cfg-foot .status { flex: 1; font-size: var(--t-xs); font-family: var(--font-mono); color: var(--muted); }
+  .cfg-foot .status.ok { color: var(--nominal); }
+  .cfg-foot .status.err { color: var(--critical); }
+  .cfg-foot .status.dirty { color: var(--caution); }
+
   /* Scrollbars */
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: 5px; border: 2px solid var(--bg); }
@@ -654,6 +716,9 @@
     <button class="tab"        data-page="analysis"   onclick="switchTab(event,'analysis')">Analysis</button>
   </nav>
 
+  <button class="ov-toggle cfg-toggle" id="cfg-toggle" aria-controls="cfg-drawer" onclick="toggleConfig()">
+    <span class="glyph"></span> Config
+  </button>
   <button class="ov-toggle dock-toggle" id="dock-toggle" aria-controls="dock-drawer" onclick="toggleDock()">
     <span class="glyph"></span> Dock
   </button>
@@ -869,6 +934,20 @@
         <button class="dock-btn" onclick="sendDockCommand('STOP_CHARGING')">Stop</button>
       </div>
       <button class="dock-btn danger" onclick="sendDockCommand('EMERGENCY')">⛔ Emergency Stop</button>
+    </div>
+  </aside>
+
+  <!-- ═══ CONFIG drawer (all-purpose settings) ══════════════════════════ -->
+  <aside id="cfg-drawer" aria-label="Configuration">
+    <header>
+      <span class="label">Configuration</span>
+      <button class="ov-close" onclick="toggleConfig(false)" aria-label="Close config">✕</button>
+    </header>
+    <div class="cfg-body" id="cfg-body"><!-- built from CONFIG_SCHEMA --></div>
+    <div class="cfg-foot">
+      <span class="status" id="cfg-status">—</span>
+      <button class="btn btn-ghost" onclick="reloadConfig()">Revert</button>
+      <button class="btn btn-primary" onclick="saveConfig()">Save</button>
     </div>
   </aside>
 
@@ -1578,6 +1657,201 @@ function sendChargeCommand() {
   const mah = parseInt(el && el.value, 10);
   sendDockCommand(Number.isFinite(mah) && mah > 0 ? ('CHARGE:' + mah) : 'CHARGE');
 }
+
+// ══ Config panel ════════════════════════════════════════════════════════════
+// Schema-driven so adding a setting is one line. Each field maps to config[group][key];
+// the Setup orchestrator (next phase) consumes the same persisted config.json.
+const CONFIG_SCHEMA = [
+  { group:'network', title:'Network', fields:[
+    {k:'ros_domain_id',   label:'ROS_DOMAIN_ID',   type:'number'},
+    {k:'backend_port',    label:'Backend port',    type:'number'},
+    {k:'frontend_port',   label:'Frontend port',   type:'number'},
+    {k:'video_source_url',label:'Video source URL',type:'text', hint:'backend → stream.py (127.0.0.1 on the Jetson)'},
+    {k:'command_token',   label:'Command token',   type:'text', hint:'backend GCS_COMMAND_TOKEN; blank = open'},
+  ]},
+  { group:'camera', title:'Camera', fields:[
+    {k:'topic',          label:'Topic',            type:'text'},
+    {k:'source',         label:'Source',           type:'select', options:['csi','usb']},
+    {k:'width',          label:'Width',            type:'number'},
+    {k:'height',         label:'Height',           type:'number'},
+    {k:'framerate',      label:'Framerate',        type:'number'},
+    {k:'sensor_id',      label:'Sensor ID · CSI',  type:'number'},
+    {k:'video_device',   label:'Video device · USB',type:'text'},
+    {k:'pixel_format',   label:'Pixel format · USB',type:'text'},
+    {k:'camera_info_url',label:'Calibration YAML', type:'text'},
+  ]},
+  { group:'mavros', title:'MAVROS', fields:[
+    {k:'fcu_url',       label:'FCU URL',          type:'text'},
+    {k:'params_file',   label:'Params file',      type:'text'},
+    {k:'run_system_sh', label:'run_system.sh',    type:'text'},
+  ]},
+  { group:'vslam', title:'VSLAM', fields:[
+    {k:'workspace', label:'Isaac workspace', type:'text'},
+  ]},
+  { group:'semantic', title:'Semantic pipeline', fields:[
+    {k:'python_exe',        label:'Python exe · venv',  type:'text'},
+    {k:'rosbag_path',       label:'Rosbag path',        type:'text'},
+    {k:'db_path',           label:'Embedding DB · .pt', type:'text'},
+    {k:'seeds_dir',         label:'Seeds dir',          type:'text'},
+    {k:'camera_topic',      label:'Camera topic · bag', type:'text'},
+    {k:'threshold',         label:'Retrieval floor',    type:'number', step:'0.01'},
+    {k:'display_threshold', label:'GUI display threshold', type:'number', step:'0.01'},
+    {k:'top_k',             label:'Top-K',              type:'number'},
+    {k:'sample_rate',       label:'Sample rate',        type:'number'},
+    {k:'downsample_seed',   label:'Downsample seed',    type:'bool'},
+    {k:'with_indexer',      label:'Run indexer',        type:'bool'},
+    {k:'with_retriever',    label:'Run retriever',      type:'bool'},
+    {k:'with_hd_server',    label:'Run HD server',      type:'bool'},
+  ]},
+  { group:'rosbag', title:'Rosbag recording', fields:[
+    {k:'live_folder', label:'Live folder', type:'text'},
+    {k:'topics',      label:'Topics',      type:'list', hint:'comma-separated — include odometry for XYZ'},
+    {k:'auto_name',   label:'Auto-name',   type:'bool'},
+  ]},
+  { group:'docking', title:'Docking', fields:[
+    {k:'enabled',      label:'Enabled',           type:'bool'},
+    {k:'gcs_host',     label:'Station host',      type:'text'},
+    {k:'gcs_port',     label:'Station port',      type:'number'},
+    {k:'settle_delay', label:'Settle delay · s',  type:'number', step:'0.5'},
+    {k:'charge_mah',   label:'Charge target · mAh',type:'number'},
+    {k:'auto_dock',    label:'Auto dock',         type:'bool'},
+  ]},
+  { group:'mission', title:'Mission', fields:[
+    {k:'script_path',      label:'Flight script',       type:'text'},
+    {k:'takeoff_alt',      label:'Takeoff alt · m',     type:'number', step:'0.1'},
+    {k:'hover_seconds',    label:'Hover · s',           type:'number', step:'0.1'},
+    {k:'wp_accept_radius', label:'WP accept radius · m',type:'number', step:'0.01'},
+    {k:'land_z_threshold', label:'Land Z threshold · m',type:'number', step:'0.01'},
+  ]},
+];
+
+let cfgBuilt = false, cfgDirty = false;
+
+function setCfgStatus(text, cls) {
+  const el = document.getElementById('cfg-status');
+  el.textContent = text; el.className = 'status' + (cls ? ' ' + cls : '');
+}
+function markCfgDirty() {
+  cfgDirty = true; setCfgStatus('unsaved changes', 'dirty');
+  document.getElementById('cfg-toggle').classList.add('dirty');
+}
+function cfgParseNum(v) { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; }
+
+function buildConfigForm() {
+  const body = document.getElementById('cfg-body');
+  body.innerHTML = CONFIG_SCHEMA.map(sec => `
+    <div class="cfg-section" data-sec="${sec.group}">
+      <div class="sec-head"><span class="label">${esc(sec.title)}</span><span class="chev">▾</span></div>
+      <div class="sec-fields">
+        ${sec.fields.map(f => renderField(sec.group, f)).join('')}
+      </div>
+    </div>`).join('');
+
+  // Collapse/expand sections
+  body.querySelectorAll('.sec-head').forEach(h =>
+    h.addEventListener('click', () => h.parentElement.classList.toggle('collapsed')));
+  // Dirty tracking for inputs/selects
+  body.addEventListener('input', markCfgDirty);
+  // Switch toggles (click + keyboard)
+  body.addEventListener('click', e => {
+    const sw = e.target.closest('.cfg-switch'); if (!sw) return;
+    sw.classList.toggle('on'); markCfgDirty();
+  });
+  body.addEventListener('keydown', e => {
+    const sw = e.target.closest('.cfg-switch'); if (!sw) return;
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); sw.classList.toggle('on'); markCfgDirty(); }
+  });
+}
+
+function renderField(group, f) {
+  const da = `data-g="${group}" data-k="${f.k}"`;
+  const hint = f.hint ? `<span class="hint">${esc(f.hint)}</span>` : '';
+  if (f.type === 'bool') {
+    return `<div class="cfg-field inline"><label>${esc(f.label)}</label>
+      <div class="cfg-switch" role="switch" tabindex="0" data-type="bool" ${da}></div></div>`;
+  }
+  if (f.type === 'select') {
+    const opts = (f.options || []).map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('');
+    return `<div class="cfg-field"><label>${esc(f.label)}</label>
+      <select class="cfg-input" data-type="str" ${da}>${opts}</select>${hint}</div>`;
+  }
+  const type = f.type === 'number' ? 'number' : 'text';
+  const step = f.step ? ` step="${f.step}"` : '';
+  const dtype = f.type === 'number' ? 'number' : (f.type === 'list' ? 'list' : 'str');
+  return `<div class="cfg-field"><label>${esc(f.label)}</label>
+    <input class="cfg-input" type="${type}"${step} data-type="${dtype}" ${da} />${hint}</div>`;
+}
+
+function populateConfig(cfg) {
+  document.querySelectorAll('#cfg-body [data-g]').forEach(el => {
+    const g = el.dataset.g, k = el.dataset.k, type = el.dataset.type || 'str';
+    const v = (cfg[g] || {})[k];
+    if (v === undefined) return;
+    if (type === 'bool')      el.classList.toggle('on', !!v);
+    else if (type === 'list') el.value = Array.isArray(v) ? v.join(', ') : String(v);
+    else                      el.value = v;
+  });
+  cfgDirty = false; setCfgStatus('loaded', '');
+  document.getElementById('cfg-toggle').classList.remove('dirty');
+}
+
+function collectConfig() {
+  const out = {};
+  document.querySelectorAll('#cfg-body [data-g]').forEach(el => {
+    const g = el.dataset.g, k = el.dataset.k, type = el.dataset.type || 'str';
+    (out[g] = out[g] || {});
+    if (type === 'bool')      out[g][k] = el.classList.contains('on');
+    else if (type === 'number') out[g][k] = cfgParseNum(el.value);
+    else if (type === 'list') out[g][k] = el.value.split(',').map(s => s.trim()).filter(Boolean);
+    else                      out[g][k] = el.value;
+  });
+  return out;
+}
+
+async function reloadConfig() {
+  try {
+    const c = await fetch(API_BASE + '/api/config').then(r => r.json());
+    populateConfig(c);
+  } catch (_) { setCfgStatus('cannot reach backend', 'err'); }
+}
+
+async function saveConfig() {
+  const payload = collectConfig();
+  const tok = sessionStorage.getItem('gcsToken') || '';
+  const headers = { 'Content-Type': 'application/json' };
+  if (tok) headers['X-GCS-Token'] = tok;
+  setCfgStatus('saving…', '');
+  try {
+    const r = await fetch(API_BASE + '/api/config', { method: 'PUT', headers, body: JSON.stringify(payload) });
+    if (r.status === 401) { setCfgStatus('token required / invalid', 'err'); flashToken(); return; }
+    if (!r.ok) { let j = {}; try { j = await r.json(); } catch (_) {} setCfgStatus('save failed: ' + (j.detail || r.status), 'err'); return; }
+    const saved = await r.json();
+    populateConfig(saved);
+    setCfgStatus('saved · ' + new Date().toISOString().slice(11, 19), 'ok');
+    // Keep the Analysis display-threshold box in sync if it changed here.
+    if (Number.isFinite(saved.display_threshold)) {
+      const e = document.getElementById('disp-thr');
+      if (e) { e.value = saved.display_threshold; renderAnalysis(); }
+    }
+  } catch (e) { setCfgStatus('save failed: ' + (e.message || e), 'err'); }
+}
+
+async function toggleConfig(force) {
+  const d = document.getElementById('cfg-drawer');
+  const open = (force != null) ? force : !d.classList.contains('open');
+  if (open) {
+    toggleDrawer(false); toggleDock(false);      // one drawer at a time
+    if (!cfgBuilt) { buildConfigForm(); cfgBuilt = true; }
+    await reloadConfig();
+  }
+  d.classList.toggle('open', open);
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const d = document.getElementById('cfg-drawer');
+  if (d.classList.contains('open')) toggleConfig(false);
+});
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 bootVideo();
