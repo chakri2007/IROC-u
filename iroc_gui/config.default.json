@@ -1,0 +1,63 @@
+{
+  "network": {
+    "ros_domain_id": 1,
+    "backend_port": 5000,
+    "frontend_port": 8080,
+    "video_source_url": "http://127.0.0.1:8765",
+    "command_token": ""
+  },
+  "camera": {
+    "topic": "/image_raw/compressed",
+    "source": "csi",
+    "width": 1280,
+    "height": 720,
+    "framerate": 10,
+    "sensor_id": 0,
+    "video_device": "/dev/video6",
+    "pixel_format": "yuyv2rgb",
+    "camera_info_url": ""
+  },
+  "mavros": {
+    "fcu_url": "serial:///dev/ttyACM0:921600",
+    "params_file": "/home/nidar/mavros_plugins.yaml",
+    "run_system_sh": "~/Desktop/run_system.sh"
+  },
+  "vslam": {
+    "workspace": "~/workspaces/isaac_ros-dev"
+  },
+  "semantic": {
+    "python_exe": "python3",
+    "rosbag_path": "",
+    "db_path": "~/semantic_db/mission.pt",
+    "seeds_dir": "~/anveshan_seeds",
+    "camera_topic": "/image_raw",
+    "threshold": 0.0,
+    "display_threshold": 0.57,
+    "top_k": 50,
+    "downsample_seed": false,
+    "sample_rate": 1,
+    "with_indexer": true,
+    "with_retriever": true,
+    "with_hd_server": true
+  },
+  "rosbag": {
+    "live_folder": "~/IROC/live_rosbags",
+    "topics": ["/image_raw", "/visual_slam/tracking/odometry", "/mavros/local_position/odom"],
+    "auto_name": true
+  },
+  "docking": {
+    "enabled": false,
+    "gcs_host": "192.168.0.114",
+    "gcs_port": 55555,
+    "settle_delay": 30.0,
+    "charge_mah": 260,
+    "auto_dock": true
+  },
+  "mission": {
+    "script_path": "~/lawnmover3.py",
+    "takeoff_alt": 1.0,
+    "hover_seconds": 5.0,
+    "wp_accept_radius": 0.2,
+    "land_z_threshold": 0.05
+  }
+}

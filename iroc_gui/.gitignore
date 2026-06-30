@@ -4,3 +4,7 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+
+# Local runtime config (machine-specific paths/IPs/token). config.default.json
+# is the committed template; config.json is written by the GUI on first save.
+config.json

@@ -19,6 +19,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel, Field
 
+import config_store
+
 
 # ── Jetson IP — only needed for video. Change to your Jetson's IP ────────────
 #JETSON_IP          = "10.202.3.2"   # <-- set this
@@ -897,16 +899,39 @@ def remove_seed(seed_name: str, _auth: bool = Depends(require_token)):
     return {"success": True, "seed_name": seed_name, "message": "seed removed"}
 
 
+def _display_threshold(cfg: Dict[str, Any]) -> float:
+    """Resolve the GUI's starting threshold. The launch-time env var
+    GCS_DISPLAY_THRESHOLD (set by gui_bringup) still wins for back-compat with the
+    autonomous-run workflow; otherwise fall back to the saved config value."""
+    dt = cfg.get("semantic", {}).get("display_threshold", 0.57)
+    env_dt = os.environ.get("GCS_DISPLAY_THRESHOLD")
+    if env_dt is not None:
+        try:
+            dt = float(env_dt)
+        except ValueError:
+            pass
+    return dt
+
+
 @app.get("/api/config")
 def get_config():
-    """Static GUI config sourced from the launch/env. The GUI reads this once on
-    load to seed its threshold box (the operator's terminal-set operating point);
-    it can still be changed live in the GUI afterwards."""
+    """Full persisted GUI config (defaults ← config.default.json ← config.json).
+    Also includes a top-level `display_threshold` for the Analysis threshold box
+    (back-compat: the GCS_DISPLAY_THRESHOLD launch env still overrides it)."""
+    cfg = config_store.load_config()
+    return {**cfg, "display_threshold": _display_threshold(cfg)}
+
+
+@app.put("/api/config")
+def put_config(payload: Dict[str, Any], _auth: bool = Depends(require_token)):
+    """Merge `payload` over the saved config and persist to config.json. Returns
+    the full merged config. Mutating → requires X-GCS-Token when one is set."""
     try:
-        dt = float(os.environ.get("GCS_DISPLAY_THRESHOLD", "0.57"))
-    except (TypeError, ValueError):
-        dt = 0.57
-    return {"display_threshold": dt}
+        merged = config_store.save_config(payload)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"invalid config: {e}")
+    push_log("SYS", "config", "configuration updated via PUT /api/config")
+    return {**merged, "display_threshold": _display_threshold(merged)}
 
 
 # ── Docking control + terminal feed ──────────────────────────────────────────
