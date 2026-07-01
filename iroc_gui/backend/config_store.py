@@ -39,6 +39,10 @@ _FALLBACK: Dict[str, Any] = {
         "sensor_id": 0, "video_device": "/dev/video6",
         "pixel_format": "yuyv2rgb",
         "camera_info_url": "file:///home/nidar/IROC/calibrationdata/ost_hd.yaml",
+        "sources": [
+            {"label": "Nadir · RPi", "topic": "/image_raw/compressed"},
+            {"label": "RealSense · color", "topic": "/camera/camera/color/image_raw/compressed"},
+        ],
     },
     "mavros": {
         "fcu_url": "serial:///dev/ttyACM0:921600",
