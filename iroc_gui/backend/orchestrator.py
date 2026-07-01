@@ -537,6 +537,16 @@ class Orchestrator:
             self._overall = "stopped"
         return {"stopped": True}
 
+    def stop_step(self, key: str) -> Dict:
+        """Stop a single step without touching the others (per-row Stop)."""
+        with self._lock:
+            step = self._steps.get(key)
+        if not step:
+            return {"stopped": False, "message": f"step not running: {key}"}
+        self._emit(key, f"stopping {step.name}")
+        step.stop()
+        return {"stopped": True, "step": key}
+
     def restart(self, key: str) -> Dict:
         with self._lock:
             if key not in _BUILDERS:

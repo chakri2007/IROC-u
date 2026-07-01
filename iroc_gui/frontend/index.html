@@ -236,6 +236,26 @@
   .hud .corner .k { font-size: 0.5625rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
   .hud .corner .v { font-size: var(--t-lg); font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); line-height: 1; }
 
+  /* Camera-source selector — minimal top-center overlay, doesn't fight the HUD */
+  .cam-src {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 7;
+    display: flex; align-items: center; gap: 7px; padding: 4px 8px; border-radius: var(--r-sm);
+    background: oklch(0.16 0.012 250 / 0.62); border: 1px solid oklch(0.96 0.004 250 / 0.10);
+    backdrop-filter: blur(4px); max-width: 320px;
+  }
+  .cam-src .k { font-size: 0.5625rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .cam-src-input {
+    background: transparent; border: none; color: var(--ink); cursor: pointer;
+    font-family: var(--font-mono); font-size: var(--t-xs); max-width: 240px;
+    padding: 1px 2px; border-radius: 3px;
+  }
+  .cam-src-input:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 2px; }
+  .cam-src-input option { background: var(--surface); color: var(--ink); }
+  .cam-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; transition: background var(--dur) var(--ease); }
+  .cam-dot.ready   { background: var(--nominal); }
+  .cam-dot.switching { background: var(--caution); animation: pulse-dot 1.0s var(--ease) infinite; }
+  .cam-dot.failed  { background: var(--critical); }
+
   /* Crosshair */
   .crosshair { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
   .crosshair::before, .crosshair::after {
@@ -670,6 +690,14 @@
   .setup-toggle.live .glyph { background: var(--nominal); animation: pulse-dot 1.3s var(--ease) infinite; }
   .setup-toggle.busy .glyph { background: var(--caution); animation: pulse-dot 1.0s var(--ease) infinite; }
   .setup-toggle.fail .glyph { background: var(--critical); }
+  .setup-count {
+    font-family: var(--font-mono); font-size: 0.5625rem; font-variant-numeric: tabular-nums;
+    color: var(--ink-2); margin-left: 5px; padding: 1px 5px; border-radius: 3px;
+    background: oklch(0.96 0.004 250 / 0.08);
+  }
+  .setup-count:empty { display: none; }
+  .setup-toggle.live .setup-count { color: var(--nominal); }
+  .setup-toggle.fail .setup-count { color: var(--critical); }
 
   #setup-drawer {
     position: absolute; top: 0; right: 0; bottom: 0; width: 500px; max-width: 100vw; z-index: 48;
@@ -683,6 +711,12 @@
     display: flex; align-items: center; justify-content: space-between;
     height: 36px; padding: 0 14px; background: var(--navy); border-bottom: 1px solid var(--hairline); flex-shrink: 0;
   }
+  #setup-drawer > header .setup-progress {
+    margin-left: auto; font-family: var(--font-mono); font-size: var(--t-xs);
+    font-variant-numeric: tabular-nums; color: var(--ink-2); letter-spacing: 0.04em;
+  }
+  #setup-drawer > header .setup-progress .all-ready { color: var(--nominal); }
+  #setup-drawer > header .setup-progress .some-failed { color: var(--critical); }
   #setup-drawer > header .ov-badge {
     font-family: var(--font-mono); font-size: var(--t-xs); font-weight: 700; letter-spacing: 0.06em;
     padding: 2px 8px; border-radius: 4px; color: var(--muted); background: var(--surface-2);
@@ -710,11 +744,13 @@
   .svc-chip.ready, .svc-chip.running { color: var(--nominal); border-color: color-mix(in oklch, var(--nominal) 45%, var(--hairline)); }
   .svc-chip.failed { color: var(--critical); border-color: color-mix(in oklch, var(--critical) 45%, var(--hairline)); }
   .svc-chip.stopped { color: var(--muted); }
-  .svc-restart {
+  .svc-btn {
     background: transparent; border: 1px solid var(--hairline); color: var(--ink-2); cursor: pointer;
     width: 26px; height: 24px; border-radius: var(--r-sm); font-size: 0.8rem; line-height: 1; flex-shrink: 0;
   }
-  .svc-restart:hover { background: color-mix(in oklch, var(--copper) 14%, transparent); color: var(--copper-hi); border-color: var(--copper); }
+  .svc-btn.restart:hover { background: color-mix(in oklch, var(--copper) 14%, transparent); color: var(--copper-hi); border-color: var(--copper); }
+  .svc-btn.stop:hover { background: color-mix(in oklch, var(--critical) 14%, transparent); color: var(--critical); border-color: color-mix(in oklch, var(--critical) 45%, var(--hairline)); }
+  .svc-btn:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 2px; }
   .svc-log {
     display: none; margin: 0; max-height: 168px; overflow-y: auto; padding: 8px 11px;
     background: #07100b; color: #8fd6a3; font-family: var(--font-mono); font-size: 0.68rem; line-height: 1.5;
@@ -777,14 +813,18 @@
 
   <div class="spacer"></div>
 
+  <!-- Pre-flight bring-up — left of the tabs, distinct from the START/ABORT in OVERRIDES -->
+  <button class="ov-toggle setup-toggle" id="setup-toggle" aria-controls="setup-drawer" aria-expanded="false" onclick="toggleSetup()">
+    <span class="glyph"></span> Setup<span class="setup-count" id="setup-count"></span>
+  </button>
+
+  <div class="cmd-divider"></div>
+
   <nav class="tabs">
     <button class="tab active" data-page="controller" onclick="switchTab(event,'controller')">Controller</button>
     <button class="tab"        data-page="analysis"   onclick="switchTab(event,'analysis')">Analysis</button>
   </nav>
 
-  <button class="ov-toggle setup-toggle" id="setup-toggle" aria-controls="setup-drawer" onclick="toggleSetup()">
-    <span class="glyph"></span> Initiate Setup
-  </button>
   <button class="ov-toggle cfg-toggle" id="cfg-toggle" aria-controls="cfg-drawer" onclick="toggleConfig()">
     <span class="glyph"></span> Config
   </button>
@@ -815,6 +855,12 @@
         <div class="hud">
           <div class="corner tl"><span class="k">ALT · rel base</span><span class="v mono" id="hud-alt">0.0 m</span></div>
           <div class="corner tr"><span class="k">Mode</span><span class="v mono" id="hud-mode">—</span></div>
+        </div>
+        <!-- Camera source — minimal top-center selector, clear of the corner HUD -->
+        <div class="cam-src" id="cam-src">
+          <span class="k">CAM</span>
+          <select id="cam-select" class="cam-src-input" aria-label="Camera source" onchange="selectCamera()"></select>
+          <span class="cam-dot" id="cam-dot" title="stream state"></span>
         </div>
         <!-- Arena mini-map -->
         <div class="minimap">
@@ -1024,6 +1070,7 @@
   <aside id="setup-drawer" aria-label="Setup bring-up">
     <header>
       <span class="label">System Bring-up</span>
+      <span class="setup-progress" id="setup-progress" aria-live="polite"></span>
       <span class="ov-badge" id="setup-badge">idle</span>
       <button class="ov-close" onclick="toggleSetup(false)" aria-label="Close setup">✕</button>
     </header>
@@ -1141,6 +1188,62 @@ function bootVideo() {
   fpv.src = API_BASE + '/video_feed';
   fpv.onload  = () => { videoOk = true;  fpv.style.opacity = 1; empty.classList.add('hidden'); };
   fpv.onerror = () => { videoOk = false; fpv.style.opacity = 0; empty.classList.remove('hidden'); };
+}
+
+// Re-open the MJPEG stream (used after switching camera source).
+function reloadFeed() {
+  const fpv = document.getElementById('fpv');
+  if (!fpv) return;
+  fpv.src = API_BASE + '/video_feed?t=' + Date.now();
+}
+
+// ── Camera source selector (Controller feed) ──────────────────────────────────
+// Simple + config-driven (no live ROS-graph introspection, per the locked design):
+// options come from config.camera.sources; switching PUTs camera.topic and, if the
+// stream service is up, restarts it to repoint, then reloads the feed.
+const CAM_FALLBACK = [
+  { label: 'Nadir · RPi',        topic: '/image_raw/compressed' },
+  { label: 'RealSense · color',  topic: '/camera/camera/color/image_raw/compressed' },
+];
+
+function populateCameraSelect(cfg) {
+  const sel = document.getElementById('cam-select');
+  if (!sel) return;
+  const cam = (cfg && cfg.camera) || {};
+  let sources = Array.isArray(cam.sources) && cam.sources.length ? cam.sources : CAM_FALLBACK;
+  const active = cam.topic || (sources[0] && sources[0].topic);
+  // ensure the active topic is always selectable even if not in the list
+  if (active && !sources.some(s => s.topic === active)) {
+    sources = [{ label: 'Current', topic: active }, ...sources];
+  }
+  sel.innerHTML = '';
+  sources.forEach(s => {
+    const o = document.createElement('option');
+    o.value = s.topic;
+    o.textContent = `${s.label} · ${s.topic}`;
+    sel.appendChild(o);
+  });
+  if (active) sel.value = active;
+}
+
+async function selectCamera() {
+  const sel = document.getElementById('cam-select');
+  const dot = document.getElementById('cam-dot');
+  if (!sel) return;
+  const topic = sel.value;
+  if (dot) dot.className = 'cam-dot switching';
+  try {
+    const r = await fetch(API_BASE + '/api/config', {
+      method: 'PUT', headers: _setupHeaders(),
+      body: JSON.stringify({ camera: { topic } }),
+    });
+    if (r.status === 401) { if (dot) dot.className = 'cam-dot failed'; flashToken(); return; }
+    // if the stream service is live, repoint it; otherwise the topic applies next start
+    const st = await fetch(API_BASE + '/api/setup/status').then(x => x.json()).catch(() => ({}));
+    const stream = (st.steps || []).find(s => s.key === 'stream');
+    if (stream) await fetch(API_BASE + '/api/setup/restart/stream', { method: 'POST', headers: _setupHeaders() });
+    setTimeout(reloadFeed, 1200);   // give stream.py a moment to resubscribe
+  } catch (_) { if (dot) dot.className = 'cam-dot failed'; }
 }
 
 // ── WebSocket ───────────────────────────────────────────────────────────────
@@ -1687,6 +1790,7 @@ async function loadConfig() {
       if (el) el.value = c.display_threshold;
       renderAnalysis();
     }
+    populateCameraSelect(c);
   } catch (_) { /* keep the HTML default */ }
 }
 
@@ -2056,6 +2160,14 @@ async function restartSetupStep(key) {
   } catch (_) {}
 }
 
+async function stopSetupStep(key) {
+  try {
+    const r = await fetch(API_BASE + '/api/setup/stop/' + encodeURIComponent(key), { method: 'POST', headers: _setupHeaders() });
+    if (r.status === 401) { setSetupStatus('token required / invalid', 'err'); flashToken(); return; }
+    await r.json(); pollSetupStatus();
+  } catch (_) {}
+}
+
 function setSetupStatus(msg, cls) {
   const el = document.getElementById('setup-status');
   if (el) { el.textContent = msg; el.className = 'status' + (cls ? ' ' + cls : ''); }
@@ -2065,16 +2177,44 @@ async function pollSetupStatus() {
   try {
     const j = await fetch(API_BASE + '/api/setup/status').then(r => r.json());
     renderSetup(j);
-    updateSetupToggle(j.overall);
+    updateSetupToggle(j);
+    syncCamDot(j);
   } catch (_) { /* backend down — keep polling */ }
 }
 
-function updateSetupToggle(overall) {
+// "N/M ready" over the run's steps — ready|running both count as up.
+function setupProgress(steps) {
+  const total = steps.length;
+  const up = steps.filter(s => s.status === 'ready' || s.status === 'running').length;
+  const failed = steps.filter(s => s.status === 'failed').length;
+  return { total, up, failed };
+}
+
+function updateSetupToggle(j) {
+  const overall = j.overall || 'idle';
+  const steps = j.steps || [];
   const b = document.getElementById('setup-toggle');
-  if (b) b.classList.toggle('live', overall === 'running');
-  if (b) { b.classList.toggle('busy', overall === 'starting'); b.classList.toggle('fail', overall === 'failed'); }
+  if (b) {
+    b.classList.toggle('live', overall === 'running');
+    b.classList.toggle('busy', overall === 'starting');
+    b.classList.toggle('fail', overall === 'failed');
+    b.setAttribute('aria-expanded', String(setupOpen));
+  }
   const badge = document.getElementById('setup-badge');
-  if (badge) { badge.textContent = overall || 'idle'; badge.className = 'ov-badge ' + (overall || 'idle'); }
+  if (badge) { badge.textContent = overall; badge.className = 'ov-badge ' + overall; }
+
+  const { total, up, failed } = setupProgress(steps);
+  const prog = document.getElementById('setup-progress');
+  if (prog) {
+    if (!total) { prog.textContent = ''; }
+    else {
+      const cls = failed ? 'some-failed' : (up === total ? 'all-ready' : '');
+      prog.innerHTML = `<span class="${cls}">${up}/${total} ready${failed ? ` · ${failed} failed` : ''}</span>`;
+    }
+  }
+  // command-bar mini-count next to "Setup"
+  const cnt = document.getElementById('setup-count');
+  if (cnt) cnt.textContent = total ? `${up}/${total}` : '';
 }
 
 function renderSetup(j) {
@@ -2082,28 +2222,50 @@ function renderSetup(j) {
   if (!list) return;
   const steps = (j && j.steps) || [];
   if (!steps.length) {
-    list.innerHTML = '<div class="setup-note" style="border:0">No setup running yet — press <b>Initiate Setup</b>.</div>';
+    // honest empty state that teaches (not "nothing here")
+    list.innerHTML = '<div class="setup-note" style="border:0">'
+      + 'Idle — no services running. Press <b>Initiate Setup</b> to bring up the '
+      + 'Jetson stack in order. Each row will show its status and live log here.</div>';
     return;
   }
   list.innerHTML = '';
   steps.forEach((s, i) => {
     const expanded = !!SVC_EXPANDED[s.key];
+    const running = s.status === 'ready' || s.status === 'running' || s.status === 'starting';
     const svc = document.createElement('div');
     svc.className = 'svc' + (expanded ? ' expanded' : '');
     const logText = (s.log || []).map(l =>
       `<span class="${/error|fail|traceback/i.test(l.text) ? 'err' : ''}">${esc(l.ts)}  ${esc(l.text)}</span>`
     ).join('\n');
+    // failed rows surface the reason inline; empty logs teach, not blank
+    const failNote = (s.status === 'failed' && s.error)
+      ? `\n<span class="err">✗ ${esc(s.error)}</span>` : '';
+    const stopBtn = running
+      ? `<button class="svc-btn stop" title="Stop ${esc(s.name)}"
+                 onclick="event.stopPropagation();stopSetupStep('${s.key}')">■</button>` : '';
     svc.innerHTML =
       `<div class="svc-head" onclick="toggleSvcLog('${s.key}')">
          <span class="svc-idx">${i + 1}</span>
          <span class="svc-name">${esc(s.name)}${s.optional ? '<span class="opt">optional</span>' : ''}</span>
          <span class="svc-chip ${esc(s.status)}">${esc(s.status)}</span>
-         <button class="svc-restart" title="Restart ${esc(s.name)}"
+         ${stopBtn}
+         <button class="svc-btn restart" title="Restart ${esc(s.name)}"
                  onclick="event.stopPropagation();restartSetupStep('${s.key}')">↻</button>
        </div>
-       <pre class="svc-log">${logText || '(no output yet)'}</pre>`;
+       <pre class="svc-log">${logText || '(no output yet)'}${failNote}</pre>`;
     list.appendChild(svc);
   });
+}
+
+// Camera dot mirrors the stream step's health (ready/switching/failed).
+function syncCamDot(j) {
+  const dot = document.getElementById('cam-dot');
+  if (!dot) return;
+  const st = (j.steps || []).find(s => s.key === 'stream');
+  dot.className = 'cam-dot' + (st ? (
+    st.status === 'ready' || st.status === 'running' ? ' ready' :
+    st.status === 'starting' ? ' switching' :
+    st.status === 'failed' ? ' failed' : '') : '');
 }
 
 function toggleSvcLog(key) {

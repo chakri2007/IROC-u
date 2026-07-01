@@ -965,6 +965,12 @@ def setup_restart(step_key: str, _auth: bool = Depends(require_token)):
     return orchestrator.manager.restart(step_key)
 
 
+@app.post("/api/setup/stop/{step_key}")
+def setup_stop_step(step_key: str, _auth: bool = Depends(require_token)):
+    """Stop a single setup step (per-row Stop) without affecting the others."""
+    return orchestrator.manager.stop_step(step_key)
+
+
 @app.get("/api/setup/status")
 def setup_status():
     """Overall + per-step status (with recent log tail). The GUI polls this while
