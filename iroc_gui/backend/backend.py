@@ -8,6 +8,7 @@ import queue
 import threading
 import time
 import urllib.request
+import urllib.parse
 
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -24,12 +25,15 @@ import config_store
 import orchestrator
 
 
-# ── Jetson IP — only needed for video. Change to your Jetson's IP ────────────
-#JETSON_IP          = "10.202.3.2"   # <-- set this
-#JETSON_IP          = "192.168.0.144"   # <-- set thi
-JETSON_IP          = "192.168.0.29"   # <-- set this
-JETSON_STREAM_PORT = 8765
-JETSON_STREAM_URL  = f"http://{JETSON_IP}:{JETSON_STREAM_PORT}/"
+# ── Video stream source (MJPEG from stream.py) ───────────────────────────────
+# stream.py runs on THIS machine (the Jetson), same as the backend, and binds
+# 0.0.0.0:<port>. We ALWAYS proxy it over loopback (127.0.0.1), so video is
+# immune to the Jetson's Wi-Fi/DHCP IP changing (the old hardcoded LAN IP was the
+# cause of the intermittent "NO SIGNAL" — see _stream_url below). The PORT is read
+# from config (network.video_source_url) at request time, so the Config panel can
+# change it with no code edit and no restart.
+VIDEO_STREAM_HOST   = "127.0.0.1"
+DEFAULT_STREAM_PORT = 8765
 
 # ── Push rate for the WebSocket telemetry channel ────────────────────────────
 WS_PUSH_HZ = 10.0
@@ -646,10 +650,24 @@ def _publish_command(cmd: str) -> Dict[str, Any]:
 
 
 # ── Operator-token dependency (mutating endpoints only) ──────────────────────
+def _active_token() -> str:
+    """The token currently guarding mutating endpoints. Precedence:
+    1. env GCS_COMMAND_TOKEN (ops override, never written to disk), else
+    2. config network.command_token (set from the Config panel).
+    Both empty → auth disabled (dev/mock)."""
+    if GCS_TOKEN:
+        return GCS_TOKEN
+    try:
+        return str(config_store.load_config().get("network", {}).get("command_token", "")).strip()
+    except Exception:
+        return ""
+
+
 def require_token(x_gcs_token: str = Header(default="")):
-    """Enforce X-GCS-Token when GCS_COMMAND_TOKEN is set in the environment.
-    Unset → open (dev/mock). Applies only to the GUI↔backend command path."""
-    if GCS_TOKEN and x_gcs_token != GCS_TOKEN:
+    """Enforce X-GCS-Token when a token is configured (env OR config).
+    Unset in both → open (dev/mock). Applies only to the GUI↔backend command path."""
+    token = _active_token()
+    if token and x_gcs_token != token:
         raise HTTPException(status_code=401, detail="invalid or missing X-GCS-Token")
     return True
 
@@ -1114,6 +1132,21 @@ async def ws(websocket: WebSocket):
 
 
 # ── Video proxy: relay the Jetson MJPEG stream to the browser ────────────────
+def _stream_url() -> str:
+    """Local MJPEG stream URL, resolved at request time.
+
+    Host is ALWAYS loopback (127.0.0.1): the backend and stream.py are co-located
+    on the Jetson, so this can never break when the Jetson's LAN IP changes. Only
+    the port is configurable, taken from network.video_source_url in config."""
+    port = DEFAULT_STREAM_PORT
+    try:
+        url = config_store.load_config().get("network", {}).get("video_source_url", "")
+        port = urllib.parse.urlparse(url).port or DEFAULT_STREAM_PORT
+    except Exception:
+        pass
+    return f"http://{VIDEO_STREAM_HOST}:{port}/"
+
+
 @app.get("/video_feed")
 def video_feed():
     """
@@ -1121,7 +1154,7 @@ def video_feed():
     The browser keeps this connection open and receives frames continuously.
     """
     try:
-        upstream = urllib.request.urlopen(JETSON_STREAM_URL, timeout=10)
+        upstream = urllib.request.urlopen(_stream_url(), timeout=10)
     except Exception as e:
         print(f"[Video] Could not open Jetson stream: {e}")
         # Empty 503 → the <img> fires onerror and the UI shows "VIDEO: LOST"
