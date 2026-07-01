@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel, Field
 
+import archive
 import config_store
 import orchestrator
 
@@ -241,8 +242,9 @@ class Status(BaseModel):
 
 
 class TriggerIndexingRequest(BaseModel):
-    rosbag_path: str = DEFAULT_ROSBAG_PATH
-    output_db_path: str = DEFAULT_OUTPUT_DB_PATH
+    # Blank → resolved from the archive at call time (live bag → embddg_<STAMP>.pt).
+    rosbag_path: str = ""
+    output_db_path: str = ""
     force_reindex: bool = False
 
 
@@ -479,7 +481,10 @@ if ROS_AVAILABLE:
             if data.strip().upper() in ("LANDED", "DOCKED") and not self._dock_triggered:
                 self._dock_triggered = True
                 push_log("SYS", "dock", "Docked → auto-triggering indexing (parallel with charging)")
-                _trigger_indexing(DEFAULT_ROSBAG_PATH, DEFAULT_OUTPUT_DB_PATH, False)
+                # Autonomous: index the live bag → embddg_<STAMP>.pt in the archive.
+                ap = archive.autonomous_paths(config_store.load_config())
+                _trigger_indexing(ap["rosbag_path"] or DEFAULT_ROSBAG_PATH,
+                                  ap["db_path"] or DEFAULT_OUTPUT_DB_PATH, False)
 
 
 # ── Service-call helpers (marshalled onto the executor thread) ───────────────
@@ -967,6 +972,37 @@ def setup_status():
     return orchestrator.manager.status()
 
 
+# ── Mission archive (replay add-on) ───────────────────────────────────────────
+# A mission = a matched (rosbag_<STAMP>, embddg_<STAMP>.pt) pair. Autonomous runs
+# use the LIVE bag; these let the operator revisit a past mission from a dropdown.
+class MissionSelect(BaseModel):
+    stamp: str = ""     # "" → live / autonomous; else an archived mission's stamp
+
+
+@app.get("/api/missions")
+def list_missions():
+    """All known missions (live + archived), newest first, for the replay dropdown."""
+    return {"missions": archive.list_missions(config_store.load_config())}
+
+
+@app.post("/api/setup/select_mission")
+def select_mission(req: MissionSelect, _auth: bool = Depends(require_token)):
+    """Choose the semantic step's data source. Blank stamp → autonomous (live bag).
+    A known stamp → replay that archived (bag, .pt) pair on the next bring-up."""
+    stamp = (req.stamp or "").strip()
+    if not stamp:
+        return orchestrator.manager.select(None)
+    cfg = config_store.load_config()
+    match = next((m for m in archive.list_missions(cfg) if m["stamp"] == stamp), None)
+    if not match:
+        raise HTTPException(status_code=404, detail=f"no mission with stamp {stamp}")
+    return orchestrator.manager.select({
+        "stamp": stamp,
+        "rosbag_path": match.get("rosbag_path"),
+        "db_path": match.get("embedding_path"),
+    })
+
+
 # ── Docking control + terminal feed ──────────────────────────────────────────
 _DOCK_VOCAB = ("DOCK", "UNDOCK", "STOP_CHARGING", "EMERGENCY", "IDLE")
 
@@ -1003,8 +1039,12 @@ def dock_log(since: int = 0):
 
 @app.post("/api/trigger_indexing")
 def trigger_indexing(req: TriggerIndexingRequest, _auth: bool = Depends(require_token)):
-    """Kick off rosbag indexing (async). Returns submitted/queued immediately."""
-    result = _trigger_indexing(req.rosbag_path, req.output_db_path, req.force_reindex)
+    """Kick off rosbag indexing (async). Returns submitted/queued immediately.
+    Blank paths resolve from the archive: the live bag → embddg_<STAMP>.pt."""
+    ap = archive.autonomous_paths(config_store.load_config())
+    rosbag_path = req.rosbag_path or ap["rosbag_path"] or DEFAULT_ROSBAG_PATH
+    output_db_path = req.output_db_path or ap["db_path"] or DEFAULT_OUTPUT_DB_PATH
+    result = _trigger_indexing(rosbag_path, output_db_path, req.force_reindex)
     return result
 
 

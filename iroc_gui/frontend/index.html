@@ -691,6 +691,9 @@
   #setup-drawer > header .ov-badge.starting { color: var(--caution); background: color-mix(in oklch, var(--caution) 16%, transparent); }
   #setup-drawer > header .ov-badge.failed { color: var(--critical); background: color-mix(in oklch, var(--critical) 16%, transparent); }
   .setup-note { padding: 10px 14px; font-size: var(--t-xs); line-height: 1.5; color: var(--muted); border-bottom: 1px solid var(--hairline); }
+  .setup-mission { padding: 10px 14px; display: flex; flex-direction: column; gap: 5px; border-bottom: 1px solid var(--hairline); }
+  .setup-mission > label { font-size: var(--t-xs); color: var(--ink-2); }
+  .setup-mission .hint { font-size: 0.5625rem; color: var(--muted); font-family: var(--font-mono); }
   .setup-list { flex: 1; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; }
 
   .svc { border: 1px solid var(--hairline); border-radius: var(--r-sm); background: var(--surface-2); overflow: hidden; }
@@ -1028,6 +1031,13 @@
       Launches the Jetson services in order (VSLAM → MAVROS → camera → stream →
       rosbag → semantic), each health-gated. Commands come from <span class="mono">config.json</span>.
       This does <b>not</b> fly the drone — use <b>Overrides → START</b> for that.
+    </div>
+    <div class="setup-mission">
+      <label for="mission-select">Image-processing source</label>
+      <select id="mission-select" class="cfg-input" onchange="selectMission()">
+        <option value="">Live · autonomous (record + index live bag)</option>
+      </select>
+      <span class="hint">Replay a past mission by revisiting its archived bag + embedding.</span>
     </div>
     <div class="setup-list" id="setup-list"><!-- built from /api/setup/status --></div>
     <div class="setup-foot">
@@ -1795,9 +1805,17 @@ const CONFIG_SCHEMA = [
     {k:'with_hd_server',    label:'Run HD server',      type:'bool'},
   ]},
   { group:'rosbag', title:'Rosbag recording', fields:[
-    {k:'live_folder', label:'Live folder', type:'text'},
+    {k:'live_folder', label:'Live folder', type:'text', hint:'current mission bag; keep on same disk as archive'},
     {k:'topics',      label:'Topics',      type:'list', hint:'comma-separated — include odometry for XYZ'},
-    {k:'auto_name',   label:'Auto-name',   type:'bool'},
+    {k:'auto_name',   label:'Auto-name',   type:'bool', hint:'rosbag_<HHMM_DDMMYYYY>'},
+  ]},
+  { group:'archive', title:'Mission archive', fields:[
+    {k:'folder',            label:'Archive folder',   type:'text', hint:'same filesystem as live → instant moves'},
+    {k:'rosbag_subdir',     label:'Rosbag subdir',    type:'text'},
+    {k:'embeddings_subdir', label:'Embeddings subdir',type:'text'},
+    {k:'rosbag_prefix',     label:'Rosbag prefix',    type:'text'},
+    {k:'embedding_prefix',  label:'Embedding prefix', type:'text'},
+    {k:'stamp_format',      label:'Stamp format',     type:'text', hint:'strftime, e.g. %H%M_%d%m%Y'},
   ]},
   { group:'docking', title:'Docking', fields:[
     {k:'enabled',      label:'Enabled',           type:'bool'},
@@ -1963,11 +1981,44 @@ function toggleSetup(force) {
   if (setupOpen) {
     toggleDrawer(false); toggleDock(false); toggleConfig(false);   // one drawer at a time
     pollSetupStatus();
+    loadMissions();
     if (!setupPollT) setupPollT = setInterval(pollSetupStatus, 1200);
   } else if (setupPollT) {
     clearInterval(setupPollT); setupPollT = null;
   }
   d.classList.toggle('open', setupOpen);
+}
+
+// Mission archive (replay add-on): populate the dropdown latest-first, and let the
+// operator point image-processing at a past (rosbag, embedding) pair. Blank = live.
+async function loadMissions() {
+  const sel = document.getElementById('mission-select');
+  if (!sel) return;
+  try {
+    const j = await fetch(API_BASE + '/api/missions').then(r => r.json());
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">Live · autonomous (record + index live bag)</option>';
+    (j.missions || []).forEach(m => {
+      const o = document.createElement('option');
+      o.value = m.stamp;
+      const bag = m.rosbag_path ? 'bag' : '—', emb = m.embedding_path ? 'pt' : '—';
+      o.textContent = `${m.when}  ·  ${m.location || 'archive'}  [${bag}/${emb}]`;
+      sel.appendChild(o);
+    });
+    sel.value = cur;   // keep the operator's choice across refreshes
+  } catch (_) { /* backend down */ }
+}
+
+async function selectMission() {
+  const sel = document.getElementById('mission-select');
+  const stamp = sel ? sel.value : '';
+  try {
+    const r = await fetch(API_BASE + '/api/setup/select_mission', {
+      method: 'POST', headers: _setupHeaders(), body: JSON.stringify({ stamp }),
+    });
+    if (r.status === 401) { setSetupStatus('token required / invalid', 'err'); flashToken(); return; }
+    setSetupStatus(stamp ? ('replay: mission ' + stamp) : 'source: live / autonomous', 'ok');
+  } catch (e) { setSetupStatus('select failed: ' + (e.message || e), 'err'); }
 }
 
 function _setupHeaders() {

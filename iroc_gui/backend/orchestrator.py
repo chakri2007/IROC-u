@@ -37,7 +37,24 @@ from datetime import datetime
 from typing import Callable, Dict, List, Optional
 from urllib.parse import urlparse
 
+import archive
 import config_store
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  MAP OF THIS FILE (for later edits)
+#  ─────────────────────────────────────────────────────────────────────────────
+#  1. Helpers .............. shell prelude, topic/port utils         (_prelude ...)
+#  2. Step ................. one service: command + readiness + state (class Step)
+#  3. Command builders ..... ONE function per setup step; edit these  (_step_* )
+#                            to change how a service is launched. They mirror the
+#                            team's manual terminals — see each builder's comment.
+#  4. Orchestrator ......... start / stop / restart the ordered chain (class Orchestrator)
+#  5. manager .............. the singleton the backend imports
+#
+#  TO ADD A STEP:   write a _step_x(cfg, sel) → Step, register it in _BUILDERS,
+#                   and add its key to config "setup.steps" (order matters).
+#  TO REORDER/SKIP: just edit config "setup.steps" — no code change.
+# ══════════════════════════════════════════════════════════════════════════════
 
 POSIX = os.name == "posix"
 LOG_LINES = 500                     # per-step ring-buffer depth
@@ -84,7 +101,8 @@ class Step:
                  ready_topics: Optional[List[str]] = None,
                  ready_port: Optional[int] = None,
                  ready_timeout: int = 45, settle: int = 3,
-                 optional: bool = False):
+                 optional: bool = False,
+                 pre_spawn: Optional[Callable[[], None]] = None):
         self.key = key
         self.name = name
         self.cmd = cmd
@@ -93,6 +111,10 @@ class Step:
         self.ready_timeout = ready_timeout
         self.settle = settle
         self.optional = optional
+        # pre_spawn: side-effect run once, right before the process starts (e.g. the
+        # rosbag step archives the previous bag here). Kept off the build path so
+        # merely *constructing* a Step never touches the filesystem.
+        self.pre_spawn = pre_spawn
         # runtime
         self.proc: Optional[subprocess.Popen] = None
         self.status = "idle"          # idle|starting|ready|running|failed|stopped
@@ -119,6 +141,11 @@ class Step:
     def spawn(self):
         self.error = ""
         self.log.clear()
+        if self.pre_spawn:
+            try:
+                self.pre_spawn()
+            except Exception as e:
+                self._append(f"[pre] {e}")     # failsafe — never blocks the launch
         self._append(f"$ {self.cmd[-1] if self.cmd else ''}")
         kw = {}
         if POSIX:
@@ -168,8 +195,19 @@ class Step:
         self.started_at = None
 
 
-# ── command builders (mirror the team's manual terminals) ─────────────────────
-def _step_vslam(cfg) -> Step:
+# ══════════════════════════════════════════════════════════════════════════════
+#  3. COMMAND BUILDERS  —  ONE PER SETUP STEP. Edit a step's command HERE.
+#  ─────────────────────────────────────────────────────────────────────────────
+#  Signature: _step_x(cfg, sel) -> Step, where
+#     cfg = the full config.json (see backend/config_store.py)
+#     sel = replay selection dict {rosbag_path, db_path, stamp} or None.
+#           None  → AUTONOMOUS: live folder + fresh stamped archive .pt.
+#           dict  → REPLAY: reuse a past mission's (bag, .pt) pair.
+#           Only the "semantic" step reads sel; others accept it for a uniform call.
+#  Each builder returns a bash -lc command that MIRRORS the manual terminal it
+#  replaces — the mirrored line is quoted in the builder's comment.
+# ══════════════════════════════════════════════════════════════════════════════
+def _step_vslam(cfg, sel=None) -> Step:
     v = cfg.get("vslam", {})
     ws = _expand(v.get("workspace", "~/workspaces/isaac_ros-dev"))
     pkg = v.get("launch_pkg", "isaac_ros_visual_slam")
@@ -183,7 +221,7 @@ def _step_vslam(cfg) -> Step:
                 ready_timeout=cfg.get("setup", {}).get("ready_timeout", 60), settle=3)
 
 
-def _step_mavros(cfg) -> Step:
+def _step_mavros(cfg, sel=None) -> Step:
     m = cfg.get("mavros", {})
     fcu = m.get("fcu_url", "serial:///dev/ttyACM0:921600")
     params = _expand(m.get("params_file", "/home/nidar/mavros_plugins.yaml"))
@@ -195,7 +233,7 @@ def _step_mavros(cfg) -> Step:
                 ready_timeout=cfg.get("setup", {}).get("ready_timeout", 45), settle=2)
 
 
-def _step_camera(cfg) -> Step:
+def _step_camera(cfg, sel=None) -> Step:
     c = cfg.get("camera", {})
     w, h, fr = c.get("width", 1280), c.get("height", 720), c.get("framerate", 10)
     if c.get("source", "csi") == "csi":
@@ -220,7 +258,9 @@ def _step_camera(cfg) -> Step:
                 ready_timeout=25, settle=2, optional=True)
 
 
-def _step_stream(cfg) -> Step:
+def _step_stream(cfg, sel=None) -> Step:
+    # LIVE VIDEO PATH: nadir feed reaches the GUI over HTTP (this MJPEG server),
+    # NOT via rosbag. The same ROS frames still feed rosbag + semantic separately.
     c = cfg.get("camera", {})
     port = _video_port(cfg)
     stream_py = os.path.join(_IROC_GUI_DIR, "stream.py")
@@ -232,27 +272,54 @@ def _step_stream(cfg) -> Step:
                 ready_port=port, ready_timeout=15, settle=1, optional=True)
 
 
-def _step_rosbag(cfg) -> Step:
+def _step_rosbag(cfg, sel=None) -> Step:
+    # Records THE mission bag into live_folder as rosbag_<STAMP> (image-processing
+    # input). Before recording, any previous live bag is moved to rosbag_archives
+    # in the background — see archive.archive_existing_bags (failsafe, low-latency,
+    # instant rename when live/archive share a filesystem). Naming + locations are
+    # all in config "rosbag" + "archive"; see backend/archive.py.
     rb = cfg.get("rosbag", {})
-    folder = _expand(rb.get("live_folder", "~/IROC/live_rosbags"))
+    folder = archive.live_folder(cfg)
     topics = rb.get("topics") or ["/image_raw"]
-    if rb.get("auto_name", True):
-        name = "live_" + datetime.now().strftime("%Y%m%d_%H%M%S")
-    else:
-        name = "live"
+    stamp = archive.new_stamp(cfg)
+    name = archive.rosbag_name(cfg, stamp) if rb.get("auto_name", True) \
+        else _rosbag_prefix_static(cfg)
     topic_args = " ".join(shlex.quote(t) for t in topics)
-    # manual equiv: cd <live_folder> && ros2 bag record -o <name> <topics...>
+    # manual equiv: cd <live_folder> && ros2 bag record -o rosbag_<STAMP> <topics...>
     script = (_prelude(cfg) + f"mkdir -p {shlex.quote(folder)}; cd {shlex.quote(folder)}; "
               f"exec ros2 bag record -o {shlex.quote(name)} {topic_args}")
-    return Step("rosbag", "Rosbag record (live)", _bash(script),
+    step = Step("rosbag", "Rosbag record (live)", _bash(script),
                 ready_timeout=8, settle=3)
+    step.pre_spawn = lambda: archive.archive_existing_bags(cfg, logger=None)
+    return step
 
 
-def _step_semantic(cfg) -> Step:
+def _rosbag_prefix_static(cfg) -> str:
+    """Fixed bag name when auto_name is off (rare — you overwrite each run)."""
+    return archive._rosbag_prefix(cfg).rstrip("_") or "rosbag"
+
+
+def _step_semantic(cfg, sel=None) -> Step:
+    # IMAGE PROCESSING USES THE ROSBAG (never the live HTTP video).
+    #   AUTONOMOUS (sel=None): index the CURRENT bag in live_folder, write/read the
+    #     embedding at embeddings_archives/embddg_<STAMP>.pt (stamp inherited from
+    #     the bag → the pair matches for later replay).
+    #   REPLAY (sel set): reuse a past mission's archived (bag, .pt) pair verbatim.
+    # Path resolution lives in backend/archive.py; only the ML knobs come from
+    # config "semantic".
     s = cfg.get("semantic", {})
     py = _expand(s.get("python_exe", "python3"))
     ws = _expand(s.get("ros_ws", "~/anveshan_ws"))
     launch = os.path.join(_IROC_GUI_DIR, "launch", "gui_bringup.launch.py")
+
+    if sel and sel.get("db_path"):
+        rosbag_path, db_path = sel.get("rosbag_path"), sel["db_path"]
+    else:
+        auto = archive.autonomous_paths(cfg)
+        rosbag_path, db_path = auto["rosbag_path"], auto["db_path"]
+    # last-resort fallback so the step still builds before any bag exists
+    if not db_path:
+        db_path = _expand(s.get("db_path", "~/semantic_db/mission.pt"))
 
     def b(x):  # ROS launch wants lowercase booleans
         return str(x).lower() if isinstance(x, bool) else str(x)
@@ -260,7 +327,7 @@ def _step_semantic(cfg) -> Step:
     args = [
         f"python_exe:={shlex.quote(py)}",
         f"camera_topic:={shlex.quote(s.get('camera_topic', '/image_raw'))}",
-        f"db_path:={shlex.quote(_expand(s.get('db_path', '~/semantic_db/mission.pt')))}",
+        f"db_path:={shlex.quote(db_path)}",
         f"seeds_dir:={shlex.quote(_expand(s.get('seeds_dir', '~/anveshan_seeds')))}",
         f"threshold:={s.get('threshold', 0.0)}",
         f"display_threshold:={s.get('display_threshold', 0.57)}",
@@ -272,8 +339,8 @@ def _step_semantic(cfg) -> Step:
         f"with_hd_server:={b(s.get('with_hd_server', True))}",
         "with_backend:=false", "with_frontend:=false", "with_dock:=false",
     ]
-    if s.get("rosbag_path"):
-        args.append(f"rosbag_path:={shlex.quote(_expand(s['rosbag_path']))}")
+    if rosbag_path:
+        args.append(f"rosbag_path:={shlex.quote(rosbag_path)}")
     # semantic nodes need the ML venv + the anveshan_ws overlay sourced first
     script = (_prelude(cfg) + f"source {shlex.quote(ws)}/install/setup.bash 2>/dev/null; "
               f"export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1; "
@@ -292,7 +359,9 @@ _BUILDERS: Dict[str, Callable[[Dict], Step]] = {
 }
 
 
-# ── the orchestrator ──────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+#  4. ORCHESTRATOR  —  runs the ordered chain; owns start/stop/restart + selection
+# ══════════════════════════════════════════════════════════════════════════════
 class Orchestrator:
     def __init__(self):
         self._lock = threading.Lock()
@@ -303,6 +372,9 @@ class Orchestrator:
         self._abort = threading.Event()
         self._log_cb: Optional[Callable[[str, str, str], None]] = None
         self._topics_cache: tuple = (0.0, set())   # (ts, set-of-topics)
+        # Mission source for the semantic step: None = AUTONOMOUS (live folder);
+        # a {rosbag_path, db_path, stamp} dict = REPLAY a past archived mission.
+        self._selected: Optional[Dict] = None
 
     def set_logger(self, cb):
         self._log_cb = cb
@@ -367,6 +439,17 @@ class Orchestrator:
         return step.alive()
 
     # -- public API ------------------------------------------------------------
+    def select(self, mission: Optional[Dict]) -> Dict:
+        """Set the mission source for the semantic step.
+        mission=None (or {}) → AUTONOMOUS (live folder). Otherwise a
+        {rosbag_path, db_path, stamp} dict → REPLAY that archived pair. Takes
+        effect on the next start()/restart('semantic')."""
+        with self._lock:
+            self._selected = mission or None
+        label = (mission or {}).get("stamp", "live / autonomous")
+        self._emit("semantic", f"mission source set → {label}")
+        return {"selected": self._selected}
+
     def status(self) -> Dict:
         with self._lock:
             # refresh transient states (a running step that has since died)
@@ -376,7 +459,10 @@ class Orchestrator:
                     if not st.error:
                         st.error = "process exited"
             steps = [self._steps[k].to_dict() for k in self._order if k in self._steps]
-        return {"overall": self._overall, "steps": steps}
+            selected = self._selected
+        return {"overall": self._overall, "steps": steps,
+                "selected": selected,
+                "mission_source": (selected or {}).get("stamp", "live")}
 
     def start(self) -> Dict:
         with self._lock:
@@ -388,7 +474,7 @@ class Orchestrator:
             self._steps = {}
             for k in self._order:
                 try:
-                    self._steps[k] = _BUILDERS[k](cfg)
+                    self._steps[k] = _BUILDERS[k](cfg, self._selected)
                 except Exception as e:
                     s = Step(k, k, [], optional=True)
                     s.status = "failed"
@@ -459,7 +545,7 @@ class Orchestrator:
             old = self._steps.get(key)
             if old and old.proc:
                 old.stop()
-            step = _BUILDERS[key](cfg)
+            step = _BUILDERS[key](cfg, self._selected)
             self._steps[key] = step
             if key not in self._order:
                 self._order.append(key)
