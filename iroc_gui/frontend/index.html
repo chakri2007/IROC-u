@@ -166,15 +166,17 @@
   /* Tab nav */
   .tabs { display: flex; gap: 2px; background: var(--bg); padding: 3px; border-radius: var(--r-sm); border: 1px solid var(--hairline); flex-shrink: 0; }
   .tab {
-    height: 28px; padding: 0 16px; border: none; background: transparent;
+    height: 32px; padding: 0 16px; border: none; background: transparent;
     color: var(--muted); font-family: var(--font-ui); font-weight: 500;
     font-size: var(--t-xs); letter-spacing: 0.08em; text-transform: uppercase;
     cursor: pointer; border-radius: 4px;
     transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+    min-width: 80px;  /* Ensure tab has good touch target */
   }
-  .tab:hover:not(.active) { color: var(--ink-2); }
+  .tab:hover:not(.active) { color: var(--ink-2); background: color-mix(in oklch, var(--hairline) 50%, transparent); }
   .tab.active { background: var(--copper); color: oklch(0.18 0.02 250); font-weight: 600; }
-  .tab:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 2px; }
+  .tab:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: -2px; }  /* Inner outline for active state */
+  .tab:active:not(.active) { background: color-mix(in oklch, var(--copper) 20%, transparent); }
 
   /* ════════════════════════════════════════════════════════════════════════
      PAGE SHELL
@@ -245,12 +247,14 @@
   }
   .cam-src .k { font-size: 0.5625rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
   .cam-src-input {
-    background: transparent; border: none; color: var(--ink); cursor: pointer;
+    background: transparent; border: 1px solid transparent; color: var(--ink); cursor: pointer;
     font-family: var(--font-mono); font-size: var(--t-xs); max-width: 240px;
-    padding: 1px 2px; border-radius: 3px;
+    padding: 4px 6px; border-radius: 3px;
+    transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
   }
-  .cam-src-input:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 2px; }
-  .cam-src-input option { background: var(--surface); color: var(--ink); }
+  .cam-src-input:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 1px; border-color: var(--copper); }
+  .cam-src-input:hover { background: color-mix(in oklch, var(--ink) 8%, transparent); }
+  .cam-src-input option { background: var(--surface); color: var(--ink); padding: 4px; }
   .cam-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; transition: background var(--dur) var(--ease); }
   .cam-dot.ready   { background: var(--nominal); }
   .cam-dot.switching { background: var(--caution); animation: pulse-dot 1.0s var(--ease) infinite; }
@@ -352,17 +356,21 @@
   .an-counts .c.matched .n { color: var(--nominal); }
 
   .btn {
-    height: 32px; padding: 0 14px; border-radius: var(--r-sm); cursor: pointer;
+    height: 44px; padding: 0 14px; border-radius: var(--r-sm); cursor: pointer;
     font-family: var(--font-ui); font-size: var(--t-xs); font-weight: 500;
     letter-spacing: 0.04em; text-transform: uppercase;
     display: inline-flex; align-items: center; gap: 7px;
     transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+    min-width: 44px;  /* Touch target: ≥44px per WCAG */
   }
   .btn:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 2px; }
+  .btn:active { transform: scale(0.98); }  /* Tactile feedback on press */
   .btn-primary { background: var(--copper); color: oklch(0.18 0.02 250); border: 1px solid var(--copper); font-weight: 600; }
-  .btn-primary:hover { background: var(--copper-hi); border-color: var(--copper-hi); }
+  .btn-primary:hover:not(:disabled) { background: var(--copper-hi); border-color: var(--copper-hi); }
+  .btn-primary:active:not(:disabled) { background: color-mix(in oklch, var(--copper) 85%, oklch(0.18 0.02 250)); }
   .btn-ghost { background: transparent; color: var(--ink-2); border: 1px solid var(--hairline); }
-  .btn-ghost:hover { border-color: var(--copper); color: var(--copper-hi); }
+  .btn-ghost:hover:not(:disabled) { border-color: var(--copper); color: var(--copper-hi); background: color-mix(in oklch, var(--copper) 8%, transparent); }
+  .btn-ghost:active:not(:disabled) { background: color-mix(in oklch, var(--copper) 14%, transparent); }
   .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
   .an-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 248px 1fr; gap: 12px; }
@@ -476,26 +484,46 @@
 
   /* ── Generic danger button (modal confirm) ──────────────────────────── */
   .btn-danger { background: var(--critical); color: oklch(0.98 0.01 25); border: 1px solid var(--critical); font-weight: 600; }
-  .btn-danger:hover:not(:disabled) { background: color-mix(in oklch, var(--critical) 86%, white); }
+  .btn-danger:hover:not(:disabled) { background: color-mix(in oklch, var(--critical) 90%, oklch(0.98 0.01 25)); border-color: color-mix(in oklch, var(--critical) 100%, white); }
+  .btn-danger:focus-visible { outline: 2px solid oklch(0.98 0.01 25); outline-offset: 2px; }
+  .btn-danger:active:not(:disabled) { background: color-mix(in oklch, var(--critical) 75%, oklch(0.18 0.02 250)); }
 
   /* ── OVERRIDES drawer ────────────────────────────────────────────────── */
   .ov-toggle {
-    height: 30px; padding: 0 13px; border-radius: var(--r-sm); cursor: pointer; flex-shrink: 0;
+    height: 44px; padding: 0 13px; border-radius: var(--r-sm); cursor: pointer; flex-shrink: 0;
     display: inline-flex; align-items: center; gap: 8px;
     background: transparent; color: var(--critical);
     border: 1px solid color-mix(in oklch, var(--critical) 45%, var(--hairline));
     font-family: var(--font-ui); font-size: var(--t-xs); font-weight: 600;
     letter-spacing: 0.08em; text-transform: uppercase;
-    transition: background var(--dur) var(--ease);
+    transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+    min-width: 44px;  /* Touch target: ≥44px */
   }
-  .ov-toggle:hover { background: color-mix(in oklch, var(--critical) 14%, transparent); }
+  .ov-toggle:hover { background: color-mix(in oklch, var(--critical) 14%, transparent); border-color: color-mix(in oklch, var(--critical) 60%, var(--hairline)); }
   .ov-toggle:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 2px; }
+  .ov-toggle:active { background: color-mix(in oklch, var(--critical) 20%, transparent); }
   .ov-toggle .glyph { width: 7px; height: 7px; border-radius: 50%; background: var(--critical); flex-shrink: 0; }
   .ov-toggle.live .glyph { animation: pulse-dot 1.3s var(--ease) infinite; }
 
+  /* Demoted secondary buttons (CONFIG, DOCK) — subtle styling */
+  .ov-toggle.cmd-demoted {
+    color: var(--muted);
+    border: 1px solid var(--hairline);
+    font-size: 0.75rem;  /* Smaller than primary */
+    font-weight: 500;  /* Less aggressive than 600 */
+  }
+  .ov-toggle.cmd-demoted:hover {
+    color: var(--ink-2);
+    background: color-mix(in oklch, var(--copper) 8%, transparent);
+    border-color: color-mix(in oklch, var(--copper) 35%, var(--hairline));
+  }
+  .ov-toggle.cmd-demoted .glyph { background: var(--muted); }
+
   /* ── DOCKING toggle + drawer + green terminal ───────────────────────── */
   .dock-toggle { color: #39d353; border-color: color-mix(in oklch, #39d353 45%, var(--hairline)); }
-  .dock-toggle:hover { background: color-mix(in oklch, #39d353 14%, transparent); }
+  .dock-toggle:hover { background: color-mix(in oklch, #39d353 14%, transparent); border-color: color-mix(in oklch, #39d353 65%, var(--hairline)); }
+  .dock-toggle:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 2px; }
+  .dock-toggle:active { background: color-mix(in oklch, #39d353 20%, transparent); }
   .dock-toggle .glyph { background: #39d353; }
   #dock-drawer {
     position: absolute; top: 0; right: 0; bottom: 0; width: 470px; z-index: 46;
@@ -648,25 +676,29 @@
   .cfg-field > label { font-size: var(--t-xs); color: var(--ink-2); }
   .cfg-field .hint { font-size: 0.5625rem; color: var(--muted); font-family: var(--font-mono); }
   .cfg-input {
-    height: 30px; padding: 0 10px; border-radius: var(--r-sm); width: 100%;
+    height: 36px; padding: 0 10px; border-radius: var(--r-sm); width: 100%;
     background: var(--bg); border: 1px solid var(--hairline); color: var(--ink);
     font-family: var(--font-mono); font-size: var(--t-sm); font-variant-numeric: tabular-nums;
+    transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
   }
+  .cfg-input:hover { border-color: color-mix(in oklch, var(--hairline) 120%, var(--bg)); }
   .cfg-input:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 1px; border-color: var(--copper); }
   select.cfg-input { cursor: pointer; }
   .cfg-field.inline .cfg-input { width: auto; min-width: 8em; }
 
   .cfg-switch {
-    width: 40px; height: 22px; border-radius: 11px; flex-shrink: 0; position: relative; cursor: pointer;
+    width: 48px; height: 28px; border-radius: 14px; flex-shrink: 0; position: relative; cursor: pointer;
     background: var(--bg); border: 1px solid var(--hairline); transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
   }
   .cfg-switch::after {
-    content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+    content: ''; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 50%;
     background: var(--muted); transition: transform var(--dur) var(--ease), background var(--dur) var(--ease);
   }
   .cfg-switch.on { background: color-mix(in oklch, var(--copper) 28%, var(--bg)); border-color: var(--copper); }
-  .cfg-switch.on::after { transform: translateX(18px); background: var(--copper); }
-  .cfg-switch:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 2px; }
+  .cfg-switch.on::after { transform: translateX(20px); background: var(--copper); }
+  .cfg-switch:hover { border-color: color-mix(in oklch, var(--hairline) 120%, var(--bg)); }
+  .cfg-switch:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 2px; border-color: var(--copper); }
+  .cfg-switch:active { opacity: 0.9; }
 
   .cfg-foot { flex-shrink: 0; border-top: 1px solid var(--hairline); padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
   .cfg-foot .status { flex: 1; font-size: var(--t-xs); font-family: var(--font-mono); color: var(--muted); }
@@ -674,35 +706,39 @@
   .cfg-foot .status.err { color: var(--critical); }
   .cfg-foot .status.dirty { color: var(--caution); }
 
-  /* ── SETUP ("Initiate Setup") ─────────────────────────────────────────── */
-  .setup-toggle { color: var(--copper-hi); border-color: color-mix(in oklch, var(--copper) 45%, var(--hairline)); }
-  .setup-toggle:hover { background: color-mix(in oklch, var(--copper) 16%, transparent); border-color: var(--copper); }
-  .setup-toggle .glyph { background: var(--copper); border-radius: 1px; }
-  .setup-toggle.live .glyph { background: var(--nominal); animation: pulse-dot 1.3s var(--ease) infinite; }
-  .setup-toggle.busy .glyph { background: var(--caution); animation: pulse-dot 1.0s var(--ease) infinite; }
-  .setup-toggle.fail .glyph { background: var(--critical); }
-  .setup-count {
-    font-family: var(--font-mono); font-size: 0.5625rem; font-variant-numeric: tabular-nums;
-    color: var(--ink-2); margin-left: 5px; padding: 1px 5px; border-radius: 3px;
-    background: oklch(0.96 0.004 250 / 0.08);
-  }
-  .setup-count:empty { display: none; }
-  .setup-toggle.live .setup-count { color: var(--nominal); }
-  .setup-toggle.fail .setup-count { color: var(--critical); }
+  /* NOTE: "Initiate Setup" now lives in the right column under the instruments
+     (see .setup-launch below), not in the command bar. */
 
-  /* ─ RESPONSIVE: Command bar (mobile ↔ desktop) ─ */
-  /* Secondary controls (CONFIG, DOCK) hidden on mobile, shown on desktop */
-  .cmd-secondary { display: flex; gap: 8px; }
+  /* ─ COMMAND BAR: Hierarchy — reweight secondary controls ─ */
+  /* CONFIG + DOCK are secondary; primary controls are SETUP, tabs, OVERRIDES */
+  .cmd-secondary { display: flex; gap: 6px; }
+  .cmd-secondary .ov-toggle {
+    color: var(--muted);     /* Demoted: muted text vs ink on primary */
+    border-color: oklch(0.96 0.004 250 / 0.14);  /* Subtle border vs primary */
+    font-size: var(--t-xs);  /* Smaller label */
+  }
+  .cmd-secondary .ov-toggle:hover {
+    background: color-mix(in oklch, var(--copper) 8%, transparent);  /* Subtle hover, not bold */
+    color: var(--ink-2);     /* Lift only to secondary text, not primary */
+  }
+
   .cmd-hamburger { display: none; }
   .cmd-drawer { position: absolute; }  /* Hidden off-screen until toggled */
 
   @media (max-width: 767px) {
     /* Mobile: hide secondary button group, show hamburger */
     .cmd-secondary { display: none; }
-    .cmd-hamburger { display: flex; width: 24px; height: 24px; gap: 4px; flex-direction: column; justify-content: center;
-      background: transparent; border: none; cursor: pointer; padding: 2px; }
-    .cmd-hamburger span { width: 100%; height: 2px; background: var(--ink-2); border-radius: 1px;
-      transition: background var(--dur) var(--ease); }
+    .cmd-hamburger {
+      display: flex; width: 44px; height: 44px; gap: 4px; flex-direction: column; justify-content: center;
+      background: transparent; border: 1px solid transparent; cursor: pointer; padding: 8px; align-items: center;
+      border-radius: var(--r-sm); transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+    }
+    .cmd-hamburger span {
+      width: 100%; height: 2px; background: var(--ink-2); border-radius: 1px;
+      transition: background var(--dur) var(--ease);
+    }
+    .cmd-hamburger:hover { background: color-mix(in oklch, var(--hairline) 50%, transparent); }
+    .cmd-hamburger:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 2px; }
     .cmd-hamburger:hover span { background: var(--copper-hi); }
 
     /* Drawer (CONFIG + DOCK) slides down from top-right on mobile */
@@ -712,7 +748,11 @@
       z-index: 100; min-width: 140px;
     }
     .cmd-drawer:not(.hidden) { display: flex; }
-    .cmd-drawer .ov-toggle { margin: 0; font-size: var(--t-xs); padding: 8px 10px; }
+    .cmd-drawer .ov-toggle {
+      margin: 0; font-size: var(--t-xs); padding: 8px 10px;
+      color: var(--ink-2); border-color: var(--hairline);  /* Secondary styling in drawer too */
+    }
+    .cmd-drawer .ov-toggle:hover { background: color-mix(in oklch, var(--copper) 8%, transparent); }
   }
 
   #setup-drawer {
@@ -747,7 +787,7 @@
   .setup-list { flex: 1; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; }
 
   .svc { border: 1px solid var(--hairline); border-radius: var(--r-sm); background: var(--surface-2); overflow: hidden; }
-  .svc-head { display: flex; align-items: center; gap: 9px; padding: 8px 11px; cursor: pointer; user-select: none; }
+  .svc-head { display: flex; align-items: center; gap: 9px; padding: 10px 11px; cursor: pointer; user-select: none; min-height: 44px; }
   .svc-idx { font-family: var(--font-mono); font-size: var(--t-xs); color: var(--muted); width: 1.3em; text-align: right; }
   .svc-name { font-size: var(--t-sm); color: var(--ink); font-weight: 600; }
   .svc-name .opt { font-weight: 400; font-size: 0.5625rem; color: var(--muted); margin-left: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -762,11 +802,15 @@
   .svc-chip.stopped { color: var(--muted); }
   .svc-btn {
     background: transparent; border: 1px solid var(--hairline); color: var(--ink-2); cursor: pointer;
-    width: 26px; height: 24px; border-radius: var(--r-sm); font-size: 0.8rem; line-height: 1; flex-shrink: 0;
+    width: 36px; height: 36px; border-radius: var(--r-sm); font-size: 0.9rem; line-height: 1; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
   }
+  .svc-btn:hover { background: color-mix(in oklch, var(--surface) 80%, transparent); }
   .svc-btn.restart:hover { background: color-mix(in oklch, var(--copper) 14%, transparent); color: var(--copper-hi); border-color: var(--copper); }
   .svc-btn.stop:hover { background: color-mix(in oklch, var(--critical) 14%, transparent); color: var(--critical); border-color: color-mix(in oklch, var(--critical) 45%, var(--hairline)); }
   .svc-btn:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 2px; }
+  .svc-btn:active { transform: scale(0.95); }
   .svc-log {
     display: none; margin: 0; max-height: 168px; overflow-y: auto; padding: 8px 11px;
     background: #07100b; color: #8fd6a3; font-family: var(--font-mono); font-size: 0.68rem; line-height: 1.5;
@@ -781,82 +825,71 @@
   .setup-foot .status.err { color: var(--critical); }
   .setup-foot .status.ok { color: var(--nominal); }
 
-  /* ─ RESPONSIVE: Instrument stack (desktop 3-col → tablet 2-col → mobile 1-col) ─ */
-  .stack {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 8px;
-  }
+  /* ── Right column: instruments fill the height, Setup pinned at the bottom ─ */
+  .side-col { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+  .side-col .stack { flex: 1; min-height: 0; }
+  /* grow from content height so the attitude horizon never clips on short laptops */
+  .stack .panel { flex: 1 1 auto; }
 
-  @media (max-width: 1100px) {
-    /* Tablet: 2-column (wrap naturally) */
-    .stack {
-      grid-template-columns: 1fr 1fr;
-    }
+  /* Setup launcher — primary bring-up action, lives under the instruments */
+  .setup-launch {
+    flex-shrink: 0; height: 48px; padding: 0 16px; border-radius: var(--r-md);
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    background: var(--copper); color: oklch(0.18 0.02 250);
+    border: 1px solid var(--copper); cursor: pointer;
+    font-family: var(--font-ui); font-size: var(--t-sm); font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease),
+                transform var(--dur) var(--ease), color var(--dur) var(--ease);
   }
-
-  @media (max-width: 767px) {
-    /* Mobile: full-width stack */
-    .stack {
-      grid-template-columns: 1fr;
-      gap: 6px;
-    }
-    .panel { min-height: auto; }  /* Let panels shrink on mobile */
+  .setup-launch:hover { background: var(--copper-hi); border-color: var(--copper-hi); }
+  .setup-launch:active { transform: scale(0.99); }
+  .setup-launch:focus-visible { outline: 2px solid var(--copper-hi); outline-offset: 2px; }
+  .setup-launch .glyph { width: 8px; height: 8px; border-radius: 2px; background: oklch(0.18 0.02 250); flex-shrink: 0; }
+  .setup-launch .setup-count {
+    font-family: var(--font-mono); font-size: var(--t-xs); font-variant-numeric: tabular-nums;
+    padding: 1px 6px; border-radius: 4px; background: oklch(0 0 0 / 0.20);
   }
+  .setup-launch .setup-count:empty { display: none; }
+  /* State reflects the orchestrator: filled copper = idle CTA; tinted surface = running */
+  .setup-launch.live, .setup-launch.busy, .setup-launch.fail {
+    color: var(--ink); background: var(--surface-2);
+  }
+  .setup-launch.live  { border-color: color-mix(in oklch, var(--nominal) 55%, var(--hairline)); }
+  .setup-launch.busy  { border-color: color-mix(in oklch, var(--caution) 55%, var(--hairline)); }
+  .setup-launch.fail  { border-color: color-mix(in oklch, var(--critical) 55%, var(--hairline)); }
+  .setup-launch.live .glyph  { background: var(--nominal);  animation: pulse-dot 1.3s var(--ease) infinite; }
+  .setup-launch.busy .glyph  { background: var(--caution);  animation: pulse-dot 1.0s var(--ease) infinite; }
+  .setup-launch.fail .glyph  { background: var(--critical); animation: pulse-dot 1.3s var(--ease) infinite; }
+  .setup-launch.live .setup-count,
+  .setup-launch.busy .setup-count,
+  .setup-launch.fail .setup-count { background: oklch(0.96 0.004 250 / 0.10); }
 
-  /* ─ RESPONSIVE: Telemetry strip (desktop row → tablet 2-row grid → mobile carousel) ─ */
+  /* ── Telemetry strip — single even row across the full width (laptop) ──── */
   .telemetry-row {
-    display: flex;
-    overflow-x: auto;
-    gap: 12px;
-    padding: 8px 12px;
+    flex-shrink: 0;
+    display: flex; align-items: center;
+    padding: 10px 4px;
     background: var(--navy);
     border-top: 1px solid var(--hairline);
-    scroll-behavior: smooth;
-    scrollbar-width: thin;
   }
-
   .telemetry-item {
-    flex: 0 0 auto;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: max-content;
-    padding: 0 8px;
+    flex: 1 1 0; position: relative;
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 2px 18px;
   }
-
-  .telemetry-item .label { font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.08em;
-    color: var(--muted); }
-  .telemetry-item .value { font-size: var(--t-sm); font-family: var(--font-mono); font-variant-numeric: tabular-nums;
-    color: var(--ink); line-height: 1; }
-
-  @media (max-width: 1100px) {
-    /* Tablet: 2-row grid (4 items per row) */
-    .telemetry-row {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      overflow: visible;
-      gap: 16px 12px;
-      padding: 10px 12px;
-    }
-    .telemetry-item { min-width: auto; }
+  /* hairline divider between every metric */
+  .telemetry-item + .telemetry-item::before {
+    content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+    height: 24px; width: 1px; background: var(--hairline);
   }
-
-  @media (max-width: 767px) {
-    /* Mobile: horizontal carousel (swipeable) */
-    .telemetry-row {
-      display: flex;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;  /* Smooth momentum scroll on iOS */
-      gap: 8px;
-      padding: 8px 12px;
-      scroll-snap-type: x mandatory;
-    }
-    .telemetry-item {
-      flex: 0 0 calc(50vw - 12px);  /* 2 items per viewport, leaves room for next */
-      scroll-snap-align: start;
-      min-width: auto;
-    }
+  .telemetry-item .label {
+    font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--ink-2);  /* WCAG AA contrast on navy */
+  }
+  .telemetry-item .value {
+    font-size: var(--t-base); font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums; color: var(--ink); line-height: 1;
   }
 
   /* Scrollbars */
@@ -907,24 +940,17 @@
 
   <div class="spacer"></div>
 
-  <!-- Pre-flight bring-up — left of the tabs, distinct from the START/ABORT in OVERRIDES -->
-  <button class="ov-toggle setup-toggle" id="setup-toggle" aria-controls="setup-drawer" aria-expanded="false" onclick="toggleSetup()">
-    <span class="glyph"></span> Setup<span class="setup-count" id="setup-count"></span>
-  </button>
-
-  <div class="cmd-divider"></div>
-
   <nav class="tabs">
     <button class="tab active" data-page="controller" onclick="switchTab(event,'controller')">Controller</button>
     <button class="tab"        data-page="analysis"   onclick="switchTab(event,'analysis')">Analysis</button>
   </nav>
 
-  <!-- Secondary controls: hidden on mobile (<768px) -->
+  <!-- Secondary controls: demoted visually — hidden on mobile (<768px) -->
   <div class="cmd-secondary">
-    <button class="ov-toggle cfg-toggle" id="cfg-toggle" aria-controls="cfg-drawer" onclick="toggleConfig()">
+    <button class="ov-toggle cfg-toggle cmd-demoted" id="cfg-toggle" aria-controls="cfg-drawer" aria-label="Configuration settings" onclick="toggleConfig()">
       <span class="glyph"></span> Config
     </button>
-    <button class="ov-toggle dock-toggle" id="dock-toggle" aria-controls="dock-drawer" onclick="toggleDock()">
+    <button class="ov-toggle dock-toggle cmd-demoted" id="dock-toggle" aria-controls="dock-drawer" aria-label="Dock manager" onclick="toggleDock()">
       <span class="glyph"></span> Dock
     </button>
   </div>
@@ -987,7 +1013,8 @@
         </div>
       </div>
 
-      <!-- Instrument stack -->
+      <!-- Right column: instruments + pre-flight bring-up launcher -->
+      <div class="side-col">
       <div class="stack">
         <div class="panel attitude">
           <header><span class="label">Attitude</span><span class="unit" id="att-unit">deg</span></header>
@@ -1025,6 +1052,12 @@
             <div class="vbox"><span class="label">Vertical</span><span class="v mono" id="val-vspd">0.0</span></div>
           </div>
         </div>
+      </div>
+
+      <!-- Pre-flight bring-up — pinned under the instruments, distinct from START/ABORT in OVERRIDES -->
+      <button class="setup-launch" id="setup-toggle" aria-controls="setup-drawer" aria-expanded="false" onclick="toggleSetup()">
+        <span class="glyph"></span> Initiate Setup <span class="setup-count" id="setup-count"></span>
+      </button>
       </div>
     </div>
 
