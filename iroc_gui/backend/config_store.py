@@ -37,17 +37,23 @@ _FALLBACK: Dict[str, Any] = {
         "topic": "/image_raw/compressed", "source": "csi",
         "width": 1280, "height": 720, "framerate": 10,
         "sensor_id": 0, "video_device": "/dev/video6",
-        "pixel_format": "yuyv2rgb", "camera_info_url": "",
+        "pixel_format": "yuyv2rgb",
+        "camera_info_url": "file:///home/nidar/IROC/calibrationdata/ost_hd.yaml",
     },
     "mavros": {
         "fcu_url": "serial:///dev/ttyACM0:921600",
         "params_file": "/home/nidar/mavros_plugins.yaml",
         "run_system_sh": "~/Desktop/run_system.sh",
     },
-    "vslam": {"workspace": "~/workspaces/isaac_ros-dev"},
+    "vslam": {
+        "workspace": "~/workspaces/isaac_ros-dev",
+        "launch_pkg": "isaac_ros_visual_slam",
+        "launch_file": "isaac_ros_visual_slam_realsense.launch.py",
+    },
     "semantic": {
-        "python_exe": "python3", "rosbag_path": "",
-        "db_path": "~/semantic_db/mission.pt", "seeds_dir": "~/anveshan_seeds",
+        "python_exe": "/home/nidar/seed_searcher_naive/img_p_new/bin/python3",
+        "ros_ws": "~/anveshan_ws", "rosbag_path": "",
+        "db_path": "~/semantic_db/mission.pt", "seeds_dir": "/home/nidar/anveshan_seeds",
         "camera_topic": "/image_raw", "threshold": 0.0, "display_threshold": 0.57,
         "top_k": 50, "downsample_seed": False, "sample_rate": 1,
         "with_indexer": True, "with_retriever": True, "with_hd_server": True,
@@ -64,6 +70,11 @@ _FALLBACK: Dict[str, Any] = {
     "mission": {
         "script_path": "~/lawnmover3.py", "takeoff_alt": 1.0, "hover_seconds": 5.0,
         "wp_accept_radius": 0.2, "land_z_threshold": 0.05,
+    },
+    "setup": {
+        "ros_setup": "/opt/ros/humble/setup.bash",
+        "steps": ["vslam", "mavros", "camera", "stream", "rosbag", "semantic"],
+        "ready_timeout": 45, "settle_delay": 3,
     },
 }
 
