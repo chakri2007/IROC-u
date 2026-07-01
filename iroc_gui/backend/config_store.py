@@ -35,7 +35,7 @@ _FALLBACK: Dict[str, Any] = {
     },
     "camera": {
         "topic": "/image_raw/compressed", "source": "csi",
-        "width": 1280, "height": 720, "framerate": 10,
+        "width": 1280, "height": 720, "framerate": 30,
         "sensor_id": 0, "video_device": "/dev/video6",
         "pixel_format": "yuyv2rgb",
         "camera_info_url": "file:///home/nidar/IROC/calibrationdata/ost_hd.yaml",

@@ -11,7 +11,7 @@
     "source": "csi",
     "width": 1280,
     "height": 720,
-    "framerate": 10,
+    "framerate": 30,
     "sensor_id": 0,
     "video_device": "/dev/video6",
     "pixel_format": "yuyv2rgb",
