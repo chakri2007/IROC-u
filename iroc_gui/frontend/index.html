@@ -339,15 +339,6 @@
   .velocity .vbox .v { font-size: var(--t-xl); }
 
   /* ── Telemetry strip ─────────────────────────────────────────────────── */
-  .telem-strip {
-    flex-shrink: 0; display: grid; grid-template-columns: repeat(8, 1fr); gap: 1px;
-    background: var(--hairline); border: 1px solid var(--hairline); border-radius: var(--r-md);
-    overflow: hidden;
-  }
-  .telem-strip .cell { background: var(--surface); padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; }
-  .telem-strip .cell .v { font-size: var(--t-lg); font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); line-height: 1; }
-  .telem-strip .cell .u { font-size: 0.5625rem; color: var(--muted); }
-
   /* ════════════════════════════════════════════════════════════════════════
      ANALYSIS
      ════════════════════════════════════════════════════════════════════════ */
@@ -699,6 +690,31 @@
   .setup-toggle.live .setup-count { color: var(--nominal); }
   .setup-toggle.fail .setup-count { color: var(--critical); }
 
+  /* ─ RESPONSIVE: Command bar (mobile ↔ desktop) ─ */
+  /* Secondary controls (CONFIG, DOCK) hidden on mobile, shown on desktop */
+  .cmd-secondary { display: flex; gap: 8px; }
+  .cmd-hamburger { display: none; }
+  .cmd-drawer { position: absolute; }  /* Hidden off-screen until toggled */
+
+  @media (max-width: 767px) {
+    /* Mobile: hide secondary button group, show hamburger */
+    .cmd-secondary { display: none; }
+    .cmd-hamburger { display: flex; width: 24px; height: 24px; gap: 4px; flex-direction: column; justify-content: center;
+      background: transparent; border: none; cursor: pointer; padding: 2px; }
+    .cmd-hamburger span { width: 100%; height: 2px; background: var(--ink-2); border-radius: 1px;
+      transition: background var(--dur) var(--ease); }
+    .cmd-hamburger:hover span { background: var(--copper-hi); }
+
+    /* Drawer (CONFIG + DOCK) slides down from top-right on mobile */
+    .cmd-drawer {
+      top: 48px; right: 0; background: var(--navy); border: 1px solid var(--hairline);
+      border-radius: var(--r-sm); display: none; flex-direction: column; gap: 1px; padding: 8px;
+      z-index: 100; min-width: 140px;
+    }
+    .cmd-drawer:not(.hidden) { display: flex; }
+    .cmd-drawer .ov-toggle { margin: 0; font-size: var(--t-xs); padding: 8px 10px; }
+  }
+
   #setup-drawer {
     position: absolute; top: 0; right: 0; bottom: 0; width: 500px; max-width: 100vw; z-index: 48;
     background: var(--surface); border-left: 1px solid var(--hairline);
@@ -765,6 +781,84 @@
   .setup-foot .status.err { color: var(--critical); }
   .setup-foot .status.ok { color: var(--nominal); }
 
+  /* ─ RESPONSIVE: Instrument stack (desktop 3-col → tablet 2-col → mobile 1-col) ─ */
+  .stack {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+  }
+
+  @media (max-width: 1100px) {
+    /* Tablet: 2-column (wrap naturally) */
+    .stack {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  @media (max-width: 767px) {
+    /* Mobile: full-width stack */
+    .stack {
+      grid-template-columns: 1fr;
+      gap: 6px;
+    }
+    .panel { min-height: auto; }  /* Let panels shrink on mobile */
+  }
+
+  /* ─ RESPONSIVE: Telemetry strip (desktop row → tablet 2-row grid → mobile carousel) ─ */
+  .telemetry-row {
+    display: flex;
+    overflow-x: auto;
+    gap: 12px;
+    padding: 8px 12px;
+    background: var(--navy);
+    border-top: 1px solid var(--hairline);
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+  }
+
+  .telemetry-item {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: max-content;
+    padding: 0 8px;
+  }
+
+  .telemetry-item .label { font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); }
+  .telemetry-item .value { font-size: var(--t-sm); font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+    color: var(--ink); line-height: 1; }
+
+  @media (max-width: 1100px) {
+    /* Tablet: 2-row grid (4 items per row) */
+    .telemetry-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      overflow: visible;
+      gap: 16px 12px;
+      padding: 10px 12px;
+    }
+    .telemetry-item { min-width: auto; }
+  }
+
+  @media (max-width: 767px) {
+    /* Mobile: horizontal carousel (swipeable) */
+    .telemetry-row {
+      display: flex;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;  /* Smooth momentum scroll on iOS */
+      gap: 8px;
+      padding: 8px 12px;
+      scroll-snap-type: x mandatory;
+    }
+    .telemetry-item {
+      flex: 0 0 calc(50vw - 12px);  /* 2 items per viewport, leaves room for next */
+      scroll-snap-align: start;
+      min-width: auto;
+    }
+  }
+
   /* Scrollbars */
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: 5px; border: 2px solid var(--bg); }
@@ -825,12 +919,31 @@
     <button class="tab"        data-page="analysis"   onclick="switchTab(event,'analysis')">Analysis</button>
   </nav>
 
-  <button class="ov-toggle cfg-toggle" id="cfg-toggle" aria-controls="cfg-drawer" onclick="toggleConfig()">
-    <span class="glyph"></span> Config
+  <!-- Secondary controls: hidden on mobile (<768px) -->
+  <div class="cmd-secondary">
+    <button class="ov-toggle cfg-toggle" id="cfg-toggle" aria-controls="cfg-drawer" onclick="toggleConfig()">
+      <span class="glyph"></span> Config
+    </button>
+    <button class="ov-toggle dock-toggle" id="dock-toggle" aria-controls="dock-drawer" onclick="toggleDock()">
+      <span class="glyph"></span> Dock
+    </button>
+  </div>
+
+  <!-- Hamburger menu (mobile only) for CONFIG + DOCK -->
+  <button class="cmd-hamburger" id="cmd-hamburger" aria-label="More options" aria-expanded="false" onclick="toggleCmdHamburger()">
+    <span></span>
   </button>
-  <button class="ov-toggle dock-toggle" id="dock-toggle" aria-controls="dock-drawer" onclick="toggleDock()">
-    <span class="glyph"></span> Dock
-  </button>
+
+  <!-- Drawer for mobile: slides in from top-right -->
+  <div class="cmd-drawer hidden" id="cmd-drawer">
+    <button class="ov-toggle cfg-toggle" aria-controls="cfg-drawer" onclick="toggleConfig(); toggleCmdHamburger(false);">
+      <span class="glyph"></span> Config
+    </button>
+    <button class="ov-toggle dock-toggle" aria-controls="dock-drawer" onclick="toggleDock(); toggleCmdHamburger(false);">
+      <span class="glyph"></span> Dock
+    </button>
+  </div>
+
   <button class="ov-toggle" id="ov-toggle" aria-expanded="false" aria-controls="ov-drawer" onclick="toggleDrawer()">
     <span class="glyph"></span> Overrides
   </button>
@@ -915,16 +1028,16 @@
       </div>
     </div>
 
-    <!-- Telemetry strip -->
-    <div class="telem-strip">
-      <div class="cell"><span class="v mono" id="t-px">0.00</span><span class="u">POS X · rel base (m)</span></div>
-      <div class="cell"><span class="v mono" id="t-py">0.00</span><span class="u">POS Y · rel base (m)</span></div>
-      <div class="cell"><span class="v mono" id="t-pz">0.00</span><span class="u">POS Z · rel base (m)</span></div>
-      <div class="cell"><span class="v mono" id="t-alt">0.0</span><span class="u">ALT (m)</span></div>
-      <div class="cell"><span class="v mono" id="t-hspd">0.0</span><span class="u">H-SPD (m/s)</span></div>
-      <div class="cell"><span class="v mono" id="t-vspd">0.0</span><span class="u">V-SPD (m/s)</span></div>
-      <div class="cell"><span class="v mono" id="t-hdg">0</span><span class="u">HDG (deg)</span></div>
-      <div class="cell"><span class="v mono" id="t-dist">0.00</span><span class="u">DIST-BASE (m)</span></div>
+    <!-- Telemetry strip — responsive: desktop row / tablet 2-grid / mobile carousel -->
+    <div class="telemetry-row">
+      <div class="telemetry-item"><span class="label">POS X</span><span class="value" id="t-px">0.00</span></div>
+      <div class="telemetry-item"><span class="label">POS Y</span><span class="value" id="t-py">0.00</span></div>
+      <div class="telemetry-item"><span class="label">POS Z</span><span class="value" id="t-pz">0.00</span></div>
+      <div class="telemetry-item"><span class="label">ALT</span><span class="value" id="t-alt">0.0</span></div>
+      <div class="telemetry-item"><span class="label">H-SPD</span><span class="value" id="t-hspd">0.0</span></div>
+      <div class="telemetry-item"><span class="label">V-SPD</span><span class="value" id="t-vspd">0.0</span></div>
+      <div class="telemetry-item"><span class="label">HDG</span><span class="value" id="t-hdg">0</span></div>
+      <div class="telemetry-item"><span class="label">DIST-BASE</span><span class="value" id="t-dist">0.00</span></div>
     </div>
 
     <!-- Compass overlay -->
@@ -2277,6 +2390,23 @@ document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   const d = document.getElementById('setup-drawer');
   if (d && d.classList.contains('open')) toggleSetup(false);
+});
+
+// ══ Responsive Command Bar (mobile hamburger menu) ════════════════════════════
+function toggleCmdHamburger(force) {
+  const btn = document.getElementById('cmd-hamburger');
+  const drawer = document.getElementById('cmd-drawer');
+  if (!btn || !drawer) return;
+  const open = force !== undefined ? force : drawer.classList.contains('hidden');
+  drawer.classList.toggle('hidden', !open);
+  btn.setAttribute('aria-expanded', String(open));
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    const drawer = document.getElementById('cmd-drawer');
+    if (drawer && !drawer.classList.contains('hidden')) toggleCmdHamburger(false);
+  }
 });
 
 // ── Boot ────────────────────────────────────────────────────────────────────
