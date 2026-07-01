@@ -20,6 +20,7 @@ from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel, Field
 
 import config_store
+import orchestrator
 
 
 # ── Jetson IP — only needed for video. Change to your Jetson's IP ────────────
@@ -932,6 +933,38 @@ def put_config(payload: Dict[str, Any], _auth: bool = Depends(require_token)):
         raise HTTPException(status_code=400, detail=f"invalid config: {e}")
     push_log("SYS", "config", "configuration updated via PUT /api/config")
     return {**merged, "display_threshold": _display_threshold(merged)}
+
+
+# ── Setup orchestrator ("Initiate Setup") ────────────────────────────────────
+# One button brings up the six manual Jetson terminals in order (VSLAM → MAVROS →
+# camera → stream → rosbag → semantic), health-gated, with live per-step logs.
+# Everything is driven by config.json; see backend/orchestrator.py.
+orchestrator.manager.set_logger(push_log)
+
+
+@app.post("/api/setup/start")
+def setup_start(_auth: bool = Depends(require_token)):
+    """Launch the full bring-up chain (async). Poll /api/setup/status for progress."""
+    return orchestrator.manager.start()
+
+
+@app.post("/api/setup/stop")
+def setup_stop(_auth: bool = Depends(require_token)):
+    """Stop every setup process (reverse order, SIGINT→SIGKILL)."""
+    return orchestrator.manager.stop()
+
+
+@app.post("/api/setup/restart/{step_key}")
+def setup_restart(step_key: str, _auth: bool = Depends(require_token)):
+    """Restart a single setup step by key (vslam|mavros|camera|stream|rosbag|semantic)."""
+    return orchestrator.manager.restart(step_key)
+
+
+@app.get("/api/setup/status")
+def setup_status():
+    """Overall + per-step status (with recent log tail). The GUI polls this while
+    the Setup panel is open."""
+    return orchestrator.manager.status()
 
 
 # ── Docking control + terminal feed ──────────────────────────────────────────

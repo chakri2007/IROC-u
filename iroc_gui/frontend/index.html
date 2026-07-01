@@ -663,6 +663,69 @@
   .cfg-foot .status.err { color: var(--critical); }
   .cfg-foot .status.dirty { color: var(--caution); }
 
+  /* ── SETUP ("Initiate Setup") ─────────────────────────────────────────── */
+  .setup-toggle { color: var(--copper-hi); border-color: color-mix(in oklch, var(--copper) 45%, var(--hairline)); }
+  .setup-toggle:hover { background: color-mix(in oklch, var(--copper) 16%, transparent); border-color: var(--copper); }
+  .setup-toggle .glyph { background: var(--copper); border-radius: 1px; }
+  .setup-toggle.live .glyph { background: var(--nominal); animation: pulse-dot 1.3s var(--ease) infinite; }
+  .setup-toggle.busy .glyph { background: var(--caution); animation: pulse-dot 1.0s var(--ease) infinite; }
+  .setup-toggle.fail .glyph { background: var(--critical); }
+
+  #setup-drawer {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 500px; max-width: 100vw; z-index: 48;
+    background: var(--surface); border-left: 1px solid var(--hairline);
+    box-shadow: -18px 0 44px oklch(0 0 0 / 0.45);
+    transform: translateX(100%); transition: transform 220ms var(--ease);
+    display: flex; flex-direction: column;
+  }
+  #setup-drawer.open { transform: translateX(0); }
+  #setup-drawer > header {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 36px; padding: 0 14px; background: var(--navy); border-bottom: 1px solid var(--hairline); flex-shrink: 0;
+  }
+  #setup-drawer > header .ov-badge {
+    font-family: var(--font-mono); font-size: var(--t-xs); font-weight: 700; letter-spacing: 0.06em;
+    padding: 2px 8px; border-radius: 4px; color: var(--muted); background: var(--surface-2);
+  }
+  #setup-drawer > header .ov-badge.running { color: var(--nominal); background: color-mix(in oklch, var(--nominal) 16%, transparent); }
+  #setup-drawer > header .ov-badge.starting { color: var(--caution); background: color-mix(in oklch, var(--caution) 16%, transparent); }
+  #setup-drawer > header .ov-badge.failed { color: var(--critical); background: color-mix(in oklch, var(--critical) 16%, transparent); }
+  .setup-note { padding: 10px 14px; font-size: var(--t-xs); line-height: 1.5; color: var(--muted); border-bottom: 1px solid var(--hairline); }
+  .setup-list { flex: 1; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; }
+
+  .svc { border: 1px solid var(--hairline); border-radius: var(--r-sm); background: var(--surface-2); overflow: hidden; }
+  .svc-head { display: flex; align-items: center; gap: 9px; padding: 8px 11px; cursor: pointer; user-select: none; }
+  .svc-idx { font-family: var(--font-mono); font-size: var(--t-xs); color: var(--muted); width: 1.3em; text-align: right; }
+  .svc-name { font-size: var(--t-sm); color: var(--ink); font-weight: 600; }
+  .svc-name .opt { font-weight: 400; font-size: 0.5625rem; color: var(--muted); margin-left: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .svc-chip {
+    margin-left: auto; font-family: var(--font-mono); font-size: 0.625rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 8px; border-radius: 4px;
+    color: var(--muted); background: var(--bg); border: 1px solid var(--hairline);
+  }
+  .svc-chip.starting { color: var(--caution); border-color: color-mix(in oklch, var(--caution) 45%, var(--hairline)); }
+  .svc-chip.ready, .svc-chip.running { color: var(--nominal); border-color: color-mix(in oklch, var(--nominal) 45%, var(--hairline)); }
+  .svc-chip.failed { color: var(--critical); border-color: color-mix(in oklch, var(--critical) 45%, var(--hairline)); }
+  .svc-chip.stopped { color: var(--muted); }
+  .svc-restart {
+    background: transparent; border: 1px solid var(--hairline); color: var(--ink-2); cursor: pointer;
+    width: 26px; height: 24px; border-radius: var(--r-sm); font-size: 0.8rem; line-height: 1; flex-shrink: 0;
+  }
+  .svc-restart:hover { background: color-mix(in oklch, var(--copper) 14%, transparent); color: var(--copper-hi); border-color: var(--copper); }
+  .svc-log {
+    display: none; margin: 0; max-height: 168px; overflow-y: auto; padding: 8px 11px;
+    background: #07100b; color: #8fd6a3; font-family: var(--font-mono); font-size: 0.68rem; line-height: 1.5;
+    white-space: pre-wrap; word-break: break-word; border-top: 1px solid var(--hairline);
+  }
+  .svc.expanded .svc-log { display: block; }
+  .svc-log .err { color: #ff6b6b; }
+
+  .setup-foot { flex-shrink: 0; border-top: 1px solid var(--hairline); padding: 11px 14px; display: flex; flex-direction: column; gap: 9px; }
+  .setup-foot .row { display: flex; gap: 9px; }
+  .setup-foot .status { font-size: var(--t-xs); font-family: var(--font-mono); color: var(--muted); min-height: 1.1em; }
+  .setup-foot .status.err { color: var(--critical); }
+  .setup-foot .status.ok { color: var(--nominal); }
+
   /* Scrollbars */
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: 5px; border: 2px solid var(--bg); }
@@ -716,6 +779,9 @@
     <button class="tab"        data-page="analysis"   onclick="switchTab(event,'analysis')">Analysis</button>
   </nav>
 
+  <button class="ov-toggle setup-toggle" id="setup-toggle" aria-controls="setup-drawer" onclick="toggleSetup()">
+    <span class="glyph"></span> Initiate Setup
+  </button>
   <button class="ov-toggle cfg-toggle" id="cfg-toggle" aria-controls="cfg-drawer" onclick="toggleConfig()">
     <span class="glyph"></span> Config
   </button>
@@ -948,6 +1014,28 @@
       <span class="status" id="cfg-status">—</span>
       <button class="btn btn-ghost" onclick="reloadConfig()">Revert</button>
       <button class="btn btn-primary" onclick="saveConfig()">Save</button>
+    </div>
+  </aside>
+
+  <!-- ═══ SETUP drawer (one-button bring-up) ════════════════════════════ -->
+  <aside id="setup-drawer" aria-label="Setup bring-up">
+    <header>
+      <span class="label">System Bring-up</span>
+      <span class="ov-badge" id="setup-badge">idle</span>
+      <button class="ov-close" onclick="toggleSetup(false)" aria-label="Close setup">✕</button>
+    </header>
+    <div class="setup-note">
+      Launches the Jetson services in order (VSLAM → MAVROS → camera → stream →
+      rosbag → semantic), each health-gated. Commands come from <span class="mono">config.json</span>.
+      This does <b>not</b> fly the drone — use <b>Overrides → START</b> for that.
+    </div>
+    <div class="setup-list" id="setup-list"><!-- built from /api/setup/status --></div>
+    <div class="setup-foot">
+      <span class="status" id="setup-status">—</span>
+      <div class="row">
+        <button class="btn btn-primary" style="flex:1" id="setup-start" onclick="startSetup()">▶ Initiate Setup</button>
+        <button class="btn btn-danger" id="setup-stop" onclick="stopSetup()">■ Stop All</button>
+      </div>
     </div>
   </aside>
 
@@ -1686,10 +1774,13 @@ const CONFIG_SCHEMA = [
     {k:'run_system_sh', label:'run_system.sh',    type:'text'},
   ]},
   { group:'vslam', title:'VSLAM', fields:[
-    {k:'workspace', label:'Isaac workspace', type:'text'},
+    {k:'workspace',   label:'Isaac workspace', type:'text'},
+    {k:'launch_pkg',  label:'Launch package',  type:'text'},
+    {k:'launch_file', label:'Launch file',     type:'text'},
   ]},
   { group:'semantic', title:'Semantic pipeline', fields:[
     {k:'python_exe',        label:'Python exe · venv',  type:'text'},
+    {k:'ros_ws',            label:'Semantic ROS ws',    type:'text', hint:'sourced before the ML nodes (anveshan_ws)'},
     {k:'rosbag_path',       label:'Rosbag path',        type:'text'},
     {k:'db_path',           label:'Embedding DB · .pt', type:'text'},
     {k:'seeds_dir',         label:'Seeds dir',          type:'text'},
@@ -1722,6 +1813,12 @@ const CONFIG_SCHEMA = [
     {k:'hover_seconds',    label:'Hover · s',           type:'number', step:'0.1'},
     {k:'wp_accept_radius', label:'WP accept radius · m',type:'number', step:'0.01'},
     {k:'land_z_threshold', label:'Land Z threshold · m',type:'number', step:'0.01'},
+  ]},
+  { group:'setup', title:'Setup bring-up', fields:[
+    {k:'ros_setup',     label:'ROS setup.bash',   type:'text'},
+    {k:'steps',         label:'Steps (in order)', type:'list', hint:'comma-separated; trim to skip a service'},
+    {k:'ready_timeout', label:'Ready timeout · s', type:'number'},
+    {k:'settle_delay',  label:'Settle delay · s',  type:'number'},
   ]},
 ];
 
@@ -1853,10 +1950,127 @@ document.addEventListener('keydown', e => {
   if (d.classList.contains('open')) toggleConfig(false);
 });
 
+// ══ Setup bring-up ("Initiate Setup") ════════════════════════════════════════
+// Opens the panel and polls /api/setup/status; the panel drives start/stop/restart.
+// Same token gate as Overrides (X-GCS-Token from sessionStorage 'gcsToken').
+let setupOpen = false;
+let setupPollT = null;
+const SVC_EXPANDED = {};   // key -> user toggled its log open
+
+function toggleSetup(force) {
+  const d = document.getElementById('setup-drawer');
+  setupOpen = (force === undefined) ? !d.classList.contains('open') : !!force;
+  if (setupOpen) {
+    toggleDrawer(false); toggleDock(false); toggleConfig(false);   // one drawer at a time
+    pollSetupStatus();
+    if (!setupPollT) setupPollT = setInterval(pollSetupStatus, 1200);
+  } else if (setupPollT) {
+    clearInterval(setupPollT); setupPollT = null;
+  }
+  d.classList.toggle('open', setupOpen);
+}
+
+function _setupHeaders() {
+  const tok = sessionStorage.getItem('gcsToken') || '';
+  const h = { 'Content-Type': 'application/json' };
+  if (tok) h['X-GCS-Token'] = tok;
+  return h;
+}
+
+async function startSetup() {
+  setSetupStatus('starting bring-up…');
+  try {
+    const r = await fetch(API_BASE + '/api/setup/start', { method: 'POST', headers: _setupHeaders() });
+    if (r.status === 401) { setSetupStatus('token required / invalid', 'err'); flashToken(); return; }
+    const j = await r.json();
+    setSetupStatus(j.started ? 'bring-up launched' : (j.message || 'already running'), j.started ? 'ok' : 'err');
+    pollSetupStatus();
+  } catch (e) { setSetupStatus('start failed: ' + (e.message || e), 'err'); }
+}
+
+async function stopSetup() {
+  setSetupStatus('stopping all…');
+  try {
+    const r = await fetch(API_BASE + '/api/setup/stop', { method: 'POST', headers: _setupHeaders() });
+    if (r.status === 401) { setSetupStatus('token required / invalid', 'err'); flashToken(); return; }
+    await r.json(); setSetupStatus('stopped', 'ok'); pollSetupStatus();
+  } catch (e) { setSetupStatus('stop failed: ' + (e.message || e), 'err'); }
+}
+
+async function restartSetupStep(key) {
+  try {
+    const r = await fetch(API_BASE + '/api/setup/restart/' + encodeURIComponent(key), { method: 'POST', headers: _setupHeaders() });
+    if (r.status === 401) { setSetupStatus('token required / invalid', 'err'); flashToken(); return; }
+    await r.json(); pollSetupStatus();
+  } catch (_) {}
+}
+
+function setSetupStatus(msg, cls) {
+  const el = document.getElementById('setup-status');
+  if (el) { el.textContent = msg; el.className = 'status' + (cls ? ' ' + cls : ''); }
+}
+
+async function pollSetupStatus() {
+  try {
+    const j = await fetch(API_BASE + '/api/setup/status').then(r => r.json());
+    renderSetup(j);
+    updateSetupToggle(j.overall);
+  } catch (_) { /* backend down — keep polling */ }
+}
+
+function updateSetupToggle(overall) {
+  const b = document.getElementById('setup-toggle');
+  if (b) b.classList.toggle('live', overall === 'running');
+  if (b) { b.classList.toggle('busy', overall === 'starting'); b.classList.toggle('fail', overall === 'failed'); }
+  const badge = document.getElementById('setup-badge');
+  if (badge) { badge.textContent = overall || 'idle'; badge.className = 'ov-badge ' + (overall || 'idle'); }
+}
+
+function renderSetup(j) {
+  const list = document.getElementById('setup-list');
+  if (!list) return;
+  const steps = (j && j.steps) || [];
+  if (!steps.length) {
+    list.innerHTML = '<div class="setup-note" style="border:0">No setup running yet — press <b>Initiate Setup</b>.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  steps.forEach((s, i) => {
+    const expanded = !!SVC_EXPANDED[s.key];
+    const svc = document.createElement('div');
+    svc.className = 'svc' + (expanded ? ' expanded' : '');
+    const logText = (s.log || []).map(l =>
+      `<span class="${/error|fail|traceback/i.test(l.text) ? 'err' : ''}">${esc(l.ts)}  ${esc(l.text)}</span>`
+    ).join('\n');
+    svc.innerHTML =
+      `<div class="svc-head" onclick="toggleSvcLog('${s.key}')">
+         <span class="svc-idx">${i + 1}</span>
+         <span class="svc-name">${esc(s.name)}${s.optional ? '<span class="opt">optional</span>' : ''}</span>
+         <span class="svc-chip ${esc(s.status)}">${esc(s.status)}</span>
+         <button class="svc-restart" title="Restart ${esc(s.name)}"
+                 onclick="event.stopPropagation();restartSetupStep('${s.key}')">↻</button>
+       </div>
+       <pre class="svc-log">${logText || '(no output yet)'}</pre>`;
+    list.appendChild(svc);
+  });
+}
+
+function toggleSvcLog(key) {
+  SVC_EXPANDED[key] = !SVC_EXPANDED[key];
+  pollSetupStatus();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const d = document.getElementById('setup-drawer');
+  if (d && d.classList.contains('open')) toggleSetup(false);
+});
+
 // ── Boot ────────────────────────────────────────────────────────────────────
 bootVideo();
 loadConfig();
 connectWS();
+pollSetupStatus();                 // reflect any in-progress bring-up on load
 setInterval(pollFallback, 1000);   // no-op while WS is connected
 </script>
 </body>
