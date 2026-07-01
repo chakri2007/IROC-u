@@ -63,6 +63,14 @@ _FALLBACK: Dict[str, Any] = {
         "topics": ["/image_raw", "/visual_slam/tracking/odometry", "/mavros/local_position/odom"],
         "auto_name": True,
     },
+    "archive": {
+        "folder": "~/IROC/archive",
+        "rosbag_subdir": "rosbag_archives",
+        "embeddings_subdir": "embeddings_archives",
+        "rosbag_prefix": "rosbag_",
+        "embedding_prefix": "embddg_",
+        "stamp_format": "%H%M_%d%m%Y",
+    },
     "docking": {
         "enabled": False, "gcs_host": "192.168.0.114", "gcs_port": 55555,
         "settle_delay": 30.0, "charge_mah": 260, "auto_dock": True,
